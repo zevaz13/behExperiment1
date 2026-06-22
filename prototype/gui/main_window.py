@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from statistics import median
+
 import serial
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
@@ -217,6 +219,11 @@ class SessionPage(QWidget):
         self._press_marks = self._plot.plot(
             [], [], pen=None, symbol="x", symbolBrush=None, symbolPen="gray", symbolSize=14
         )
+        # Median of all button-press locations so far; only shown once
+        # there's at least one press.
+        self._median_marker = self._plot.plot(
+            [], [], pen=None, symbol="star", symbolBrush="r", symbolPen=None, symbolSize=20
+        )
 
         self._table = QTableWidget(0, 3)
         self._table.setHorizontalHeaderLabels(["Trial", "Red", "Green"])
@@ -250,6 +257,7 @@ class SessionPage(QWidget):
         self._press_reds.clear()
         self._press_greens.clear()
         self._press_marks.setData([], [])
+        self._median_marker.setData([], [])
         self._current_marker.setData([], [])
         self._table.setRowCount(0)
         self._session_active = False
@@ -289,6 +297,7 @@ class SessionPage(QWidget):
             self._press_reds.append(frame.red)
             self._press_greens.append(frame.green)
             self._press_marks.setData(self._press_reds, self._press_greens)
+            self._median_marker.setData([median(self._press_reds)], [median(self._press_greens)])
             self._append_table_row(frame.trial_number, frame.red, frame.green)
 
     def _append_table_row(self, trial_number: int, red: int, green: int) -> None:
