@@ -10,16 +10,16 @@ namespace {
 const char* kStartCommand = "START";
 const char* kStopCommand  = "STOP";
 
-// "<name> <value>", e.g. "maxRed 2800".
-void handleSetCommand(const String& args) {
-  int separator = args.indexOf(' ');
+// One assignment: "<name> <value>", e.g. "maxRed 2800".
+void applySetting(const String& assignment) {
+  int separator = assignment.indexOf(' ');
   if (separator < 0) {
-    Serial.println("SET requires a name and a value");
+    Serial.println("SET requires a name and a value: " + assignment);
     return;
   }
 
-  String name = args.substring(0, separator);
-  long value  = args.substring(separator + 1).toInt();
+  String name = assignment.substring(0, separator);
+  long value  = assignment.substring(separator + 1).toInt();
 
   if (settingsTrySet(name, value)) {
     Serial.println("OK " + name + "=" + String(value));
@@ -28,6 +28,35 @@ void handleSetCommand(const String& args) {
   } else {
     Serial.println("Unknown setting: " + name);
   }
+}
+
+// "<name> <value>[, <name> <value>...]", e.g.
+// "flickerFrequencyHz 20, amberValue 500".
+void handleSetCommand(const String& args) {
+  int start = 0;
+  while (start < (int)args.length()) {
+    int comma = args.indexOf(',', start);
+    String assignment = (comma < 0) ? args.substring(start) : args.substring(start, comma);
+    assignment.trim();
+    if (assignment.length() > 0) {
+      applySetting(assignment);
+    }
+    if (comma < 0) {
+      break;
+    }
+    start = comma + 1;
+  }
+}
+
+void printCurrentSettings() {
+  Serial.println(
+      "mode=" + String(settingsMode() == Mode::Advanced ? "ADVANCED" : "DEFAULT") +
+      " flickerFrequencyHz=" + String(settingsFlickerFrequencyHz()) +
+      " amberValue=" + String(settingsAmberValue()) +
+      " maxRed=" + String(settingsMaxRed()) +
+      " maxGreen=" + String(settingsMaxGreen()) +
+      " minRed=" + String(settingsMinRed()) +
+      " minGreen=" + String(settingsMinGreen()));
 }
 
 }  // namespace
@@ -62,6 +91,8 @@ void serialCommandsPoll() {
     Serial.println("Mode: advanced");
   } else if (command.startsWith("SET ")) {
     handleSetCommand(command.substring(4));
+  } else if (command == "GET") {
+    printCurrentSettings();
   } else {
     Serial.println("Unknown command");
   }

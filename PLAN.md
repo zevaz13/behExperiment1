@@ -51,8 +51,21 @@
       matching the `startingPoint/experiment.md` spec.
 - [x] Documented mode/SET usage and the experimental procedure in
       `docs/configure.md`.
-
-### 1.3 
+### 1.3 Refining configuration
+- [x] `SET` now accepts multiple comma-separated assignments on one line,
+      e.g. `SET flickerFrequencyHz 20, amberValue 500`.
+- [x] `SET flickerFrequencyHz 0` now stops the flicker entirely: RED, GREEN,
+      and AMBER are all written continuously at their current values
+      instead of alternating (`flicker.cpp`'s `flickering` flag).
+- [x] "Command to start a default experiment": no new command needed —
+      `START` already always uses whatever settings are currently active,
+      and they persist across trials until `MODE DEFAULT` is sent. Documented
+      this explicitly in `docs/configure.md` so it's not assumed to be a gap.
+- [x] Added `GET`: prints the current mode and all six setting values on one
+      line, so the configuration can be checked before `START`.
+- [x] Wrote `docs/configure.md` for human users: Default/Advanced mode,
+      every command, and the full experimental procedure.
+### 1.4
 - [ ] Decide on and implement an improved (less learnable) variability
       routine — current one keeps the legacy per-trial random ADC offset.
 

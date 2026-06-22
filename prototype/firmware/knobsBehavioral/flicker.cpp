@@ -18,6 +18,7 @@ volatile int currentRed   = 0;
 volatile int currentGreen = 0;
 
 volatile bool redGreenPhase = false;
+volatile bool flickering    = true;
 
 void flickerISR() {
   redGreenPhase = !redGreenPhase;
@@ -31,6 +32,12 @@ void flickerISR() {
     analogWrite(kGreenPin, 0);
     analogWrite(kAmberPin, currentAmber);
   }
+}
+
+void writeSteadyState() {
+  analogWrite(kRedPin, currentRed);
+  analogWrite(kGreenPin, currentGreen);
+  analogWrite(kAmberPin, currentAmber);
 }
 
 }  // namespace
@@ -49,17 +56,32 @@ void flickerStart(int redValue, int greenValue, int amberValue) {
   currentAmber = amberValue;
   redGreenPhase = false;
 
-  unsigned long halfPeriodUs = 1000000UL / (2 * settingsFlickerFrequencyHz());
+  unsigned int frequencyHz = settingsFlickerFrequencyHz();
+  flickering = frequencyHz > 0;
+
+  if (!flickering) {
+    // 0 Hz means "no flicker": all three channels are shown at once,
+    // continuously, at their current values.
+    writeSteadyState();
+    return;
+  }
+
+  unsigned long halfPeriodUs = 1000000UL / (2 * frequencyHz);
   flickerTimer.begin(flickerISR, halfPeriodUs);
 }
 
 void flickerSetRedGreen(int redValue, int greenValue) {
   currentRed   = redValue;
   currentGreen = greenValue;
+  if (!flickering) {
+    writeSteadyState();
+  }
 }
 
 void flickerStop() {
-  flickerTimer.end();
+  if (flickering) {
+    flickerTimer.end();
+  }
 
   currentAmber = currentRed = currentGreen = 0;
   analogWrite(kAmberPin, 0);

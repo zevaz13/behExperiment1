@@ -21,19 +21,26 @@ Switching `MODE DEFAULT` → `MODE ADVANCED` does not change any values by
 itself — it only unlocks `SET`. Switching back to `MODE DEFAULT` always
 resets every setting to its default, even if it was changed in Advanced mode.
 
+`START` always runs with whatever values are currently active, regardless of
+mode. There is no separate "run with my configured values" command — set up
+`MODE ADVANCED` + `SET ...` once, then every `START` after that (across as
+many trials as you like) keeps using those values until you either change
+them again or send `MODE DEFAULT`.
+
 ## Setting variables
 
-In Advanced mode, send one `SET <name> <value>` command per variable:
+In Advanced mode, send a `SET <name> <value>` command. Multiple settings can
+be combined on one line, comma-separated:
 
 ```
 SET maxRed 2800
 SET minGreen 0
-SET flickerFrequencyHz 12
+SET flickerFrequencyHz 20, amberValue 500
 ```
 
 | Name | Default | Meaning |
 |---|---|---|
-| `flickerFrequencyHz` | 10 | Square-wave frequency for the RED+GREEN / AMBER alternation. Takes effect on the next `START`. |
+| `flickerFrequencyHz` | 10 | Square-wave frequency for the RED+GREEN / AMBER alternation. `0` disables flicker entirely (see below). Takes effect on the next `START`. |
 | `amberValue` | 2400 | Fixed PWM value (0-4095) for the amber/yellow reference. |
 | `maxRed` | 3000 | Upper bound of the red knob's PWM output range. |
 | `maxGreen` | 2400 | Upper bound of the green knob's PWM output range. |
@@ -44,14 +51,30 @@ SET flickerFrequencyHz 12
 (roughly every 50 ms, even mid-trial). `flickerFrequencyHz` and `amberValue`
 apply the next time a trial starts.
 
-The firmware replies to every command on a single line, e.g. `OK maxRed=2800`,
-`SET requires MODE ADVANCED`, or `Unknown setting: foo`.
+The firmware replies to each assignment on its own line, e.g. `OK
+maxRed=2800`, `SET requires MODE ADVANCED`, or `Unknown setting: foo`.
+
+### `flickerFrequencyHz 0`: disabling flicker
+
+Setting the flicker frequency to `0` stops the RED+GREEN / AMBER alternation.
+All three channels are shown at once, continuously, at their current values
+— useful for checking the raw color mix without the flicker illusion.
+
+### Reading back the current configuration
+
+Send `GET` at any time (including mid-trial) to print the active mode and all
+six setting values on one line, e.g.:
+
+```
+mode=ADVANCED flickerFrequencyHz=20 amberValue=500 maxRed=2800 maxGreen=2400 minRed=0 minGreen=0
+```
 
 ## Experimental procedure / pipeline
 
 1. Connect to the Teensy at 38400 baud. It prints a ready message on boot.
 2. Optionally configure the session: `MODE ADVANCED`, then any `SET`
-   commands. Skip this to run with defaults.
+   commands. Skip this to run with the `config.h` defaults. Send `GET` to
+   confirm what's active before starting.
 3. Send `START` to begin a trial:
    - The knob-to-brightness offset is re-randomized (so the dial position
      can't be learned across trials).
@@ -66,7 +89,8 @@ The firmware replies to every command on a single line, e.g. `OK maxRed=2800`,
    trial's logged result) and stops the trial automatically. No `STOP` is
    needed in this case.
 6. To abort a trial without a button press, send `STOP`.
-7. Repeat from step 3 for the next trial.
+7. Repeat from step 3 for the next trial — the same configuration carries
+   over automatically; no need to re-send `SET` between trials.
 
 ## Data format
 
