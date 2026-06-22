@@ -30,6 +30,14 @@ int clampToRange(int value, int minValue, int maxValue) {
   return value;
 }
 
+// A random jump: magnitude in [kWalkJumpMin, kWalkJumpMax], random sign —
+// always a real move, never a negligible one.
+int randomJump() {
+  int magnitude = random(kWalkJumpMin, kWalkJumpMax + 1);
+  bool negative = random(0, 2) == 0;
+  return negative ? -magnitude : magnitude;
+}
+
 void startSearch(int targetRed, int targetGreen) {
   trialNumber++;
   knobsAnchorTo(targetRed, targetGreen);
@@ -54,10 +62,8 @@ void enterBreak() {
 }
 
 void beginNextSearch() {
-  int targetRed   = clampToRange(lastPressRed   + (int)random(-kWalkJitterRed,   kWalkJitterRed + 1),
-                                  settingsMinRed(),   settingsMaxRed());
-  int targetGreen = clampToRange(lastPressGreen + (int)random(-kWalkJitterGreen, kWalkJitterGreen + 1),
-                                  settingsMinGreen(), settingsMaxGreen());
+  int targetRed   = clampToRange(lastPressRed   + randomJump(), settingsMinRed(),   settingsMaxRed());
+  int targetGreen = clampToRange(lastPressGreen + randomJump(), settingsMinGreen(), settingsMaxGreen());
   startSearch(targetRed, targetGreen);
 }
 

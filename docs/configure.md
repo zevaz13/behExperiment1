@@ -91,9 +91,10 @@ mode=ADVANCED flickerFrequencyHz=20 amberValue=500 maxRed=2800 maxGreen=2400 min
    - Acknowledges the press: all three LEDs blink together 3 times
      (~0.5 s).
    - Goes dark for a 2 s break. During the break, the next search's
-     starting point is picked: the just-logged (red, green) location,
-     each shifted by a fresh random offset (±1000), clamped to
-     `[minRed, maxRed]` / `[minGreen, maxGreen]`.
+     starting point is picked: the just-logged (red, green) location, each
+     shifted by a random jump (magnitude 500-1500, random direction, so
+     it's always a real move), clamped to `[minRed, maxRed]` /
+     `[minGreen, maxGreen]`.
    - Automatically starts the next search at that point — back to step 3,
      no `START` needed.
 5. To end the session at any point (mid-search, mid-acknowledge, or

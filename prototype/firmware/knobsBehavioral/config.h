@@ -33,8 +33,14 @@ constexpr unsigned long kAcknowledgeBlinkIntervalMs = 80;
 constexpr unsigned long kBreakDurationMs       = 2000;
 
 // Each search's starting point is the previous button press's location,
-// shifted by a fresh random offset within +/- this range, so it can't be
-// memorized across searches. The very first search of a session starts at
+// shifted by a fresh random jump, so it can't be memorized across searches.
+// The jump's magnitude is drawn from [kWalkJumpMin, kWalkJumpMax] (same
+// range for both channels) with a random sign, so it's always a real move,
+// never a negligible one. The very first search of a session starts at
 // (0, 0).
-constexpr int kWalkJitterRed   = 1000;
-constexpr int kWalkJitterGreen = 1000;
+constexpr int kWalkJumpMin = 500;
+constexpr int kWalkJumpMax = 1500;
+
+// Mapped red/green readings within this many units of 0 are snapped to
+// exactly 0, to suppress ADC noise jitter near the low end of the range.
+constexpr int kDeadbandThreshold = 25;

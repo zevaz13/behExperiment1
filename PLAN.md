@@ -2,7 +2,7 @@
 
 ## Milestones
 
-### 1. Firmware cleanup (in progress)
+### 1. Firmware cleanup (1.1-1.5 hardware-verified)
 - [x] Split monolithic `knobsExperimentTeensy.ino` into modules under
       `prototype/firmware/knobsBehavioral/`: `pins.h`, `config.h`,
       `flicker.*`, `knobs.*`, `trial.*`, `serial_commands.*`.
@@ -92,11 +92,37 @@
       used by both the button-press result and the live telemetry stream.
 - [x] Documented the new pacing and per-session `TrialNumber` behavior in
       `docs/configure.md`.
+### 1.5 Minor changes
+- [x] The walk jump is now randomized rather than fixed at 1000: magnitude
+      drawn uniformly from `[kWalkJumpMin, kWalkJumpMax]` = [500, 1500]
+      (same range for both channels), with a random sign — every jump is a
+      real move, never a negligible one. Replaces `kWalkJitterRed/Green` in
+      `config.h`; logic lives in `trial.cpp`'s `randomJump()`.
+- [x] Added a deadband: in `knobs.cpp`, the mapped red/green output is
+      snapped to exactly 0 if it's within `kDeadbandThreshold` (25) units of
+      0, to suppress ADC noise jitter near the low end of the range.
+- [x] Re-flashed and verified on real Teensy 4.0 + PCB hardware: `SET`/
+      `MODE`/`GET`, the 100 ms telemetry stream, min/max red-green
+      clamping, the deadband, the randomized walk jump, and the full
+      Searching/Acknowledging/OnBreak auto-continue pacing all confirmed
+      working as designed.
 
 ### 2. GUI refactor (not started)
-- [ ] Evaluate replacement language/framework for the experiment logger.
-- [ ] Update serial protocol usage to match firmware (`START`/`STOP`).
-- [ ] Real-time plotting of red/green trial data.
+
+### 2.1 Definition of requirements
+- [ ] Evaluate replacement language/framework for the experiment logger. The initial requirements are :
+      - [ ] GUI should be able to find the Serial port used by Teensy
+      - [ ] Evaluate whether we must move this project to the Windows partition. We are using WSL, and Teensy is connected to A Com port
+      - [ ] The first prototype should wait until connecting to TEENSY.
+      - [ ] It should allow to select a DEFAULT experiment, or an Advanced one 
+      - [ ] If advanced, a screen to set values is presented, suggestions in here are the default values of the experiment.
+      - [ ] Update serial protocol usage to match firmware (`START`/`STOP`).
+      - [ ] Real-time plotting of red/green trial data. Axis limits should coinicide with the red and green min and max settings. Red in x axis, green in y axis. For now use a black round marker to show the position
+      
+### 2.2 First draft
+- [ ] Implement first draft of application
+
+### 2.3 Add Support for participant and session number
 - [ ] Participant/session management and data export.
 
 ### 3. Firmware + GUI integration (not started)
@@ -107,7 +133,7 @@
   floor of the knob-to-PWM mapping (`map(raw, 0, 4095, minX, maxX)` in
   `knobs.cpp`), instead of being unused constants like in the legacy code.
   Defaults are now 0/0, matching `startingPoint/experiment.md`.
-- Re-flash and verify on hardware: `SET`/`MODE` commands, the 100 ms
-  telemetry stream, the min/max red-green clamping, and the new
-  acknowledge/break/auto-continue pacing have not yet been tested on real
-  hardware.
+- All of milestone 1 (1.1 through 1.5) is now hardware-verified on Teensy
+  4.0 + PCB — see the 1.5 entry above. Remaining gaps are scoped to
+  milestones 2 and 3 below (GUI rewrite and firmware/GUI integration),
+  which haven't started.

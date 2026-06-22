@@ -32,6 +32,11 @@ int wrapToAdcRange(int value) {
   return value < 0 ? value + 4096 : value;
 }
 
+// Suppresses ADC noise jitter near the low end of the output range.
+int applyDeadband(int value) {
+  return value < kDeadbandThreshold ? 0 : value;
+}
+
 // Inverse of map(raw, 0, 4095, minOut, maxOut), clamped to the ADC range.
 int rawFromMapped(int mappedValue, int minOut, int maxOut) {
   if (maxOut <= minOut) {
@@ -73,8 +78,8 @@ void knobsThreadLoop() {
     int rawRed   = wrapToAdcRange(averageReading(kRedKnobPin)   + redOffset);
     int rawGreen = wrapToAdcRange(averageReading(kGreenKnobPin) + greenOffset);
 
-    currentRed   = map(rawRed,   0, 4095, settingsMinRed(),   settingsMaxRed());
-    currentGreen = map(rawGreen, 0, 4095, settingsMinGreen(), settingsMaxGreen());
+    currentRed   = applyDeadband(map(rawRed,   0, 4095, settingsMinRed(),   settingsMaxRed()));
+    currentGreen = applyDeadband(map(rawGreen, 0, 4095, settingsMinGreen(), settingsMaxGreen()));
 
     flickerSetRedGreen(currentRed, currentGreen);
   }

@@ -31,6 +31,9 @@ You are a seasoned software-Firmware engineer with experiment in experimental de
 2. Keep it simple - NEVER over-engineer, ALWAYS simplify, NO unnecessary defensive programming. No extra features - focus on simplicity.
 3. Be concise. Keep README minimal. IMPORTANT: no emojis ever
 
+## Information
+- Information about the progress in this project can be found in summary.md, and /docs/ Read it as you need, at your discression.
+
 ## Other, 
 - This project exist in a repository, we could also use Git issues to stablish goals.
 - You have access to the agent-browser skill. Use it for online searches.
