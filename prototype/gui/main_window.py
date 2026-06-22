@@ -6,15 +6,19 @@ import serial
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMainWindow,
     QPushButton,
     QRadioButton,
     QSpinBox,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -178,37 +182,97 @@ class ModePage(QWidget):
 
 
 class SessionPage(QWidget):
-    """Start/Stop controls plus the live red/green scatter plot."""
+    """Start/Stop controls, the live red/green scatter plot, and a log of
+    button-press results. "Back" is only enabled while no session is
+    running (i.e. before Start, or after Stop)."""
+
+    back_requested = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._link: SerialLink | None = None
+        self._session_active = False
+        self._press_reds: list[int] = []
+        self._press_greens: list[int] = []
 
         self._status_label = QLabel("Not started")
-        start_button = QPushButton("Start")
-        stop_button = QPushButton("Stop")
-        start_button.clicked.connect(lambda: self._send("START"))
-        stop_button.clicked.connect(lambda: self._send("STOP"))
+        self._start_button = QPushButton("Start")
+        self._stop_button = QPushButton("Stop")
+        self._back_button = QPushButton("Back to experiment selection")
+        self._save_button = QPushButton("Save Results...")
+        self._start_button.clicked.connect(self._start)
+        self._stop_button.clicked.connect(self._stop)
+        self._back_button.clicked.connect(self.back_requested)
+        self._save_button.clicked.connect(self._save_results)
 
         self._plot = PlotWidget()
-        self._plot.setLabel("bottom", "red")
-        self._plot.setLabel("left", "green")
-        self._scatter = self._plot.plot([], [], pen=None, symbol="o", symbolBrush="k", symbolSize=14)
+        self._plot.setBackground("k")
+        self._plot.setLabel("bottom", "Red LED intensity (A/D)")
+        self._plot.setLabel("left", "Green LED intensity (A/D)")
+        # Live position: solid yellow round marker.
+        self._current_marker = self._plot.plot(
+            [], [], pen=None, symbol="o", symbolBrush="y", symbolPen=None, symbolSize=16
+        )
+        # One gray X per button press, accumulated for the whole session.
+        self._press_marks = self._plot.plot(
+            [], [], pen=None, symbol="x", symbolBrush=None, symbolPen="gray", symbolSize=14
+        )
+
+        self._table = QTableWidget(0, 3)
+        self._table.setHorizontalHeaderLabels(["Trial", "Red", "Green"])
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._table.verticalHeader().setVisible(False)
 
         button_row = QHBoxLayout()
-        button_row.addWidget(start_button)
-        button_row.addWidget(stop_button)
+        button_row.addWidget(self._start_button)
+        button_row.addWidget(self._stop_button)
+        button_row.addWidget(self._back_button)
+        button_row.addWidget(self._save_button)
+
+        plot_and_table = QHBoxLayout()
+        plot_and_table.addWidget(self._plot, stretch=3)
+        plot_and_table.addWidget(self._table, stretch=1)
 
         layout = QVBoxLayout(self)
         layout.addLayout(button_row)
         layout.addWidget(self._status_label)
-        layout.addWidget(self._plot)
+        layout.addLayout(plot_and_table)
+
+        self._update_button_states()
 
     def start_session(self, link: SerialLink, settings: Settings) -> None:
-        self._link = link
-        self._link.line_received.connect(self._on_line)
-        self._plot.setXRange(settings.min_red, settings.max_red)
-        self._plot.setYRange(settings.min_green, settings.max_green)
+        if self._link is None:
+            self._link = link
+            self._link.line_received.connect(self._on_line)
+        else:
+            self._link = link
+
+        self._press_reds.clear()
+        self._press_greens.clear()
+        self._press_marks.setData([], [])
+        self._current_marker.setData([], [])
+        self._table.setRowCount(0)
+        self._session_active = False
+        self._status_label.setText("Not started")
+        self._update_button_states()
+
+        self._plot.setXRange(settings.min_red, settings.max_red, padding=0)
+        self._plot.setYRange(settings.min_green, settings.max_green, padding=0)
+
+    def _start(self) -> None:
+        self._send("START")
+        self._session_active = True
+        self._update_button_states()
+
+    def _stop(self) -> None:
+        self._send("STOP")
+        self._session_active = False
+        self._update_button_states()
+
+    def _update_button_states(self) -> None:
+        self._start_button.setEnabled(not self._session_active)
+        self._stop_button.setEnabled(self._session_active)
+        self._back_button.setEnabled(not self._session_active)
 
     def _send(self, command: str) -> None:
         if self._link is not None:
@@ -218,8 +282,40 @@ class SessionPage(QWidget):
         frame = parse_dataframe(line)
         if frame is None:
             return
-        self._scatter.setData([frame.red], [frame.green])
+        self._current_marker.setData([frame.red], [frame.green])
         self._status_label.setText(f"Search {frame.trial_number}, last Press={frame.press}")
+
+        if frame.press == 1:
+            self._press_reds.append(frame.red)
+            self._press_greens.append(frame.green)
+            self._press_marks.setData(self._press_reds, self._press_greens)
+            self._append_table_row(frame.trial_number, frame.red, frame.green)
+
+    def _append_table_row(self, trial_number: int, red: int, green: int) -> None:
+        row = self._table.rowCount()
+        self._table.insertRow(row)
+        for column, value in enumerate((trial_number, red, green)):
+            self._table.setItem(row, column, QTableWidgetItem(str(value)))
+        self._table.scrollToBottom()
+
+    def _save_results(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Save Results", "results.txt", "Text files (*.txt)")
+        if not path:
+            return
+        with open(path, "w") as results_file:
+            results_file.write("Trial Red Green\n")
+            for row in range(self._table.rowCount()):
+                values = (self._table.item(row, column).text() for column in range(3))
+                results_file.write(" ".join(values) + "\n")
+
+
+def _format_settings(settings: Settings) -> str:
+    return (
+        f"Mode: {settings.mode} | Flicker: {settings.flicker_frequency_hz} Hz | "
+        f"Amber: {settings.amber_value} | "
+        f"Red: [{settings.min_red}, {settings.max_red}] | "
+        f"Green: [{settings.min_green}, {settings.max_green}]"
+    )
 
 
 class MainWindow(QMainWindow):
@@ -237,14 +333,37 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._session_page)
         self.setCentralWidget(self._stack)
 
+        # Always-visible footer with the active configuration, regardless of
+        # which page is showing.
+        self._settings_label = QLabel("Not connected")
+        self.statusBar().addPermanentWidget(self._settings_label, 1)
+
         self._connect_page.connected.connect(self._on_connected)
         self._mode_page.mode_confirmed.connect(self._on_mode_confirmed)
+        self._session_page.back_requested.connect(self._on_back_requested)
 
     def _on_connected(self, link: SerialLink, settings: Settings) -> None:
         self._link = link
         self._mode_page.set_link_and_defaults(link, settings)
+        self._settings_label.setText(_format_settings(settings))
         self._stack.setCurrentWidget(self._mode_page)
 
     def _on_mode_confirmed(self, settings: Settings) -> None:
         self._session_page.start_session(self._link, settings)
+        self._settings_label.setText(_format_settings(settings))
         self._stack.setCurrentWidget(self._session_page)
+
+    def _on_back_requested(self) -> None:
+        # Re-query GET rather than reusing stale local state, since settings
+        # persist on the firmware regardless of mode (see docs/configure.md).
+        self._link.line_received.connect(self._on_settings_for_back)
+        self._link.send("GET")
+
+    def _on_settings_for_back(self, line: str) -> None:
+        settings = parse_get_response(line)
+        if settings is None:
+            return
+        self._link.line_received.disconnect(self._on_settings_for_back)
+        self._mode_page.set_link_and_defaults(self._link, settings)
+        self._settings_label.setText(_format_settings(settings))
+        self._stack.setCurrentWidget(self._mode_page)
