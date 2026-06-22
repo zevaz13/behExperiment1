@@ -1,13 +1,16 @@
 #pragma once
 
-// Samples the red/green knob potentiometers, smooths them over a short
-// window, and applies a per-trial random offset so the dial-to-brightness
-// mapping can't be memorized across trials.
+// Samples the red/green knob potentiometers and smooths them over a short
+// window.
 void knobsInit();
-void knobsRandomizeOffsets();
 int knobsCurrentRed();
 int knobsCurrentGreen();
 
-// Runs forever on its own thread: samples while a trial is active and
+// Re-anchors the internal ADC offset so that, given the knobs' current
+// physical position, the next sample maps to (targetRed, targetGreen) —
+// used to start each search at an unpredictable-but-controlled point.
+void knobsAnchorTo(int targetRed, int targetGreen);
+
+// Runs forever on its own thread: samples while a search is active and
 // pushes results into the flicker module.
 void knobsThreadLoop();

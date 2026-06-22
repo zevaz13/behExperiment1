@@ -25,10 +25,22 @@ int averageReading(int pin) {
   return sum / kNumSamples;
 }
 
-// Preserves the legacy wraparound behavior for offset readings that spill
-// past the 12-bit ADC range.
+// Offsets can be negative (see knobsAnchorTo), so wrap with true modulo
+// instead of the legacy single-direction subtraction.
 int wrapToAdcRange(int value) {
-  return value > 4095 ? value - 4095 : value;
+  value %= 4096;
+  return value < 0 ? value + 4096 : value;
+}
+
+// Inverse of map(raw, 0, 4095, minOut, maxOut), clamped to the ADC range.
+int rawFromMapped(int mappedValue, int minOut, int maxOut) {
+  if (maxOut <= minOut) {
+    return 0;
+  }
+  long raw = (long)(mappedValue - minOut) * 4095 / (maxOut - minOut);
+  if (raw < 0)    raw = 0;
+  if (raw > 4095) raw = 4095;
+  return (int)raw;
 }
 
 }  // namespace
@@ -37,9 +49,15 @@ void knobsInit() {
   analogReadResolution(kAdcResolutionBits);
 }
 
-void knobsRandomizeOffsets() {
-  redOffset   = random(0, kRedOffsetMax);
-  greenOffset = random(0, kGreenOffsetMax);
+void knobsAnchorTo(int targetRed, int targetGreen) {
+  int rawRedNow   = analogRead(kRedKnobPin);
+  int rawGreenNow = analogRead(kGreenKnobPin);
+
+  int rawRedTarget   = rawFromMapped(targetRed,   settingsMinRed(),   settingsMaxRed());
+  int rawGreenTarget = rawFromMapped(targetGreen, settingsMinGreen(), settingsMaxGreen());
+
+  redOffset   = rawRedTarget   - rawRedNow;
+  greenOffset = rawGreenTarget - rawGreenNow;
 }
 
 int knobsCurrentRed()   { return currentRed; }
@@ -47,7 +65,7 @@ int knobsCurrentGreen() { return currentGreen; }
 
 void knobsThreadLoop() {
   while (true) {
-    if (!trialIsActive()) {
+    if (!trialIsSearching()) {
       threads.yield();
       continue;
     }

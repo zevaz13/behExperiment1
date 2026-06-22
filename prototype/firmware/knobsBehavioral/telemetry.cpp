@@ -31,8 +31,8 @@ void telemetryPoll() {
   }
   dueToSend = false;
 
-  if (!trialIsActive()) {
+  if (!trialIsSearching()) {
     return;
   }
-  sendDataFrame(settingsAmberValue(), knobsCurrentRed(), knobsCurrentGreen(), 0);
+  sendDataFrame(settingsAmberValue(), knobsCurrentRed(), knobsCurrentGreen(), 0, trialCurrentNumber());
 }

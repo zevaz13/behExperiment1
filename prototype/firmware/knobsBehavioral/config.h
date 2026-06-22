@@ -20,12 +20,21 @@ constexpr int kAdcResolutionBits = 12;
 constexpr int kNumSamples       = 10;
 constexpr int kSampleIntervalMs = 5;
 
-// Per-trial randomized offset added to the raw ADC reading, so the
-// knob-to-brightness mapping can't be memorized across trials.
-constexpr int kRedOffsetMax   = 1500;
-constexpr int kGreenOffsetMax = 500;
-
 constexpr unsigned long kButtonDebounceMs = 250;
 
 // How often the live trial telemetry is streamed over serial.
 constexpr unsigned long kTelemetryIntervalUs = 100000;  // 100 ms
+
+// Acknowledge blink (button press feedback) and inter-search break: all
+// three LEDs blink together kAcknowledgeBlinkCount times, then go dark for
+// kBreakDurationMs before the next search starts automatically.
+constexpr int kAcknowledgeBlinkCount           = 3;
+constexpr unsigned long kAcknowledgeBlinkIntervalMs = 80;
+constexpr unsigned long kBreakDurationMs       = 2000;
+
+// Each search's starting point is the previous button press's location,
+// shifted by a fresh random offset within +/- this range, so it can't be
+// memorized across searches. The very first search of a session starts at
+// (0, 0).
+constexpr int kWalkJitterRed   = 1000;
+constexpr int kWalkJitterGreen = 1000;

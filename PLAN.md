@@ -65,9 +65,33 @@
       line, so the configuration can be checked before `START`.
 - [x] Wrote `docs/configure.md` for human users: Default/Advanced mode,
       every command, and the full experimental procedure.
-### 1.4
-- [ ] Decide on and implement an improved (less learnable) variability
-      routine — current one keeps the legacy per-trial random ADC offset.
+
+### 1.4 Experimental pacing and location variability
+- [x] `trial.cpp` is now a state machine (`Searching` -> `Acknowledging` ->
+      `OnBreak` -> `Searching`, looping automatically) instead of a single
+      `active` bool. A button press no longer stops the session: it
+      acknowledges (all 3 LEDs blink together 3x over ~0.5s,
+      `kAcknowledgeBlinkCount`/`kAcknowledgeBlinkIntervalMs`), goes dark for
+      2s (`kBreakDurationMs`), then resumes searching automatically. `STOP`
+      still fully ends the session from any state.
+- [x] Replaced the free-random per-search ADC offset
+      (`knobsRandomizeOffsets`) with `knobsAnchorTo(targetRed, targetGreen)`:
+      it samples the knobs once and back-solves the offset so the next
+      sample lands exactly on a target value. The target for each new
+      search is `clamp(lastPressValue +/- random(kWalkJitterRed/Green),
+      minX, maxX)` — computed when the break starts, applied when it ends.
+      The first search of a session targets `(0, 0)`.
+- [x] Fixed `knobs.cpp`'s ADC wraparound to true modulo-4096 (the legacy
+      single-direction subtraction only handled positive overflow; offsets
+      can now be negative since they're solved rather than drawn from
+      `random(0, max)`).
+- [x] Guarded the new offset math against `maxRed == minRed` (or green) —
+      would have been a division by zero if set via `SET`.
+- [x] `TrialNumber` in the dataframe now increments per search (was always
+      0), starting at 1, exposed via `trial.h`'s `trialCurrentNumber()` and
+      used by both the button-press result and the live telemetry stream.
+- [x] Documented the new pacing and per-session `TrialNumber` behavior in
+      `docs/configure.md`.
 
 ### 2. GUI refactor (not started)
 - [ ] Evaluate replacement language/framework for the experiment logger.
@@ -84,5 +108,6 @@
   `knobs.cpp`), instead of being unused constants like in the legacy code.
   Defaults are now 0/0, matching `startingPoint/experiment.md`.
 - Re-flash and verify on hardware: `SET`/`MODE` commands, the 100 ms
-  telemetry stream, and the min/max red-green clamping have not yet been
-  tested on real hardware.
+  telemetry stream, the min/max red-green clamping, and the new
+  acknowledge/break/auto-continue pacing have not yet been tested on real
+  hardware.

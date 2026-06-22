@@ -78,6 +78,18 @@ void flickerSetRedGreen(int redValue, int greenValue) {
   }
 }
 
+void flickerFreeze() {
+  if (flickering) {
+    flickerTimer.end();
+  }
+}
+
+void flickerSetAllOn(bool on) {
+  analogWrite(kRedPin,   on ? currentRed   : 0);
+  analogWrite(kGreenPin, on ? currentGreen : 0);
+  analogWrite(kAmberPin, on ? currentAmber : 0);
+}
+
 void flickerStop() {
   if (flickering) {
     flickerTimer.end();

@@ -21,4 +21,5 @@ void setup() {
 void loop() {
   serialCommandsPoll();
   telemetryPoll();
+  trialPoll();
 }

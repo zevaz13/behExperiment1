@@ -2,10 +2,10 @@
 
 #include "dataframe.h"
 
-void sendDataFrame(int amberValue, int redValue, int greenValue, int press) {
+void sendDataFrame(int amberValue, int redValue, int greenValue, int press, int trialNumber) {
   Serial.print(0);
   Serial.print('@');
-  Serial.print(0);
+  Serial.print(trialNumber);
   Serial.print('@');
   Serial.print(amberValue);
   Serial.print('@');
