@@ -1,0 +1,20 @@
+# .NET / C# (GUI)
+bin/
+obj/
+*.user
+
+# Arduino / Teensy build artifacts
+*.hex
+*.elf
+build/
+
+# Python (uv)
+.venv/
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
