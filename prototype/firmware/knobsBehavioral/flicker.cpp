@@ -4,6 +4,7 @@
 #include "flicker.h"
 #include "config.h"
 #include "pins.h"
+#include "settings.h"
 
 namespace {
 
@@ -48,7 +49,8 @@ void flickerStart(int redValue, int greenValue, int amberValue) {
   currentAmber = amberValue;
   redGreenPhase = false;
 
-  flickerTimer.begin(flickerISR, kFlickerHalfPeriodUs);
+  unsigned long halfPeriodUs = 1000000UL / (2 * settingsFlickerFrequencyHz());
+  flickerTimer.begin(flickerISR, halfPeriodUs);
 }
 
 void flickerSetRedGreen(int redValue, int greenValue) {

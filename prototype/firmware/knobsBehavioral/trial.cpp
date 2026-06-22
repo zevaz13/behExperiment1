@@ -5,27 +5,16 @@
 #include "pins.h"
 #include "flicker.h"
 #include "knobs.h"
+#include "settings.h"
+#include "dataframe.h"
 
 namespace {
 
 volatile bool active = false;
 volatile unsigned long lastButtonMs = 0;
 
-// Field order matches the GUI's log header: TriggerCue TrialNumber Amber
-// red green Press. TriggerCue/TrialNumber/Press are unused in this
-// experiment but kept so the log format stays consistent.
 void sendResult() {
-  Serial.print(0);
-  Serial.print('@');
-  Serial.print(0);
-  Serial.print('@');
-  Serial.print(kAmberValue);
-  Serial.print('@');
-  Serial.print(knobsCurrentRed());
-  Serial.print('@');
-  Serial.print(knobsCurrentGreen());
-  Serial.print('@');
-  Serial.println(0);
+  sendDataFrame(settingsAmberValue(), knobsCurrentRed(), knobsCurrentGreen(), 1);
 }
 
 void onButtonPress() {
@@ -51,7 +40,7 @@ void trialInit() {
 
 void trialStart() {
   knobsRandomizeOffsets();
-  flickerStart(0, 0, kAmberValue);
+  flickerStart(0, 0, settingsAmberValue());
   active = true;
 }
 

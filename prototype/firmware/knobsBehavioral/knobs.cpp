@@ -6,6 +6,7 @@
 #include "pins.h"
 #include "flicker.h"
 #include "trial.h"
+#include "settings.h"
 
 namespace {
 
@@ -54,8 +55,8 @@ void knobsThreadLoop() {
     int rawRed   = wrapToAdcRange(averageReading(kRedKnobPin)   + redOffset);
     int rawGreen = wrapToAdcRange(averageReading(kGreenKnobPin) + greenOffset);
 
-    currentRed   = map(rawRed,   0, 4095, 0, kMaxRed);
-    currentGreen = map(rawGreen, 0, 4095, 0, kMaxGreen);
+    currentRed   = map(rawRed,   0, 4095, settingsMinRed(),   settingsMaxRed());
+    currentGreen = map(rawGreen, 0, 4095, settingsMinGreen(), settingsMaxGreen());
 
     flickerSetRedGreen(currentRed, currentGreen);
   }

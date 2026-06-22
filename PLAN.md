@@ -27,10 +27,32 @@
 - [x] Re-flash and verify on hardware that RED+GREEN and AMBER no longer
       overlap.
 
-### 1.2 Configure 
-- [ ] Make flicker frequency, amber/yellow reference, max red/green, and
-      min red/green configurable via serial commands (currently constants
-      in `config.h`).
+### 1.2 Configuration and serial printing
+- [x] Added `settings.{h,cpp}`: flicker frequency, amber reference, max/min
+      red/green are now runtime values (defaults from `config.h`),
+      configurable via `SET <name> <value>` (e.g. `SET maxRed 2800`) —
+      plain text, one setting per line, chosen so a desktop app can build
+      commands with simple string formatting (no JSON parser needed on
+      the Teensy).
+- [x] Default mode (`MODE DEFAULT`, the boot default): settings are pinned
+      to the `config.h` constants; `SET` is rejected. Advanced mode
+      (`MODE ADVANCED`): `SET` takes effect immediately, applied live
+      (mid-trial changes to max/min red/green take effect on the next
+      knob sample; frequency changes take effect on the next trial start).
+- [x] Added `telemetry.{h,cpp}`: a second `IntervalTimer` ticks every
+      100 ms; while a trial is active it streams the same dataframe format
+      used for the final result (Press=0), so a GUI can plot red/green
+      live. The one-shot send on button press is unchanged (Press=1) and
+      still marks the authoritative trial result in the log.
+- [x] Extracted `dataframe.{h,cpp}` (`sendDataFrame`) so the periodic
+      stream and the final button-press result share one implementation
+      instead of duplicating the `Serial.print` sequence.
+- [x] Default `minRed`/`minGreen` changed from the legacy 300/300 to 0/0,
+      matching the `startingPoint/experiment.md` spec.
+- [x] Documented mode/SET usage and the experimental procedure in
+      `docs/configure.md`.
+
+### 1.3 
 - [ ] Decide on and implement an improved (less learnable) variability
       routine — current one keeps the legacy per-trial random ADC offset.
 
@@ -44,9 +66,10 @@
 - [ ] End-to-end test of new firmware against new/updated GUI.
 
 ## Known gaps surfaced during cleanup
-- `minRed`/`minGreen` existed as constants in the legacy firmware but were
-  never actually applied as a floor in the ADC-to-PWM mapping — the spec
-  in `startingPoint/experiment.md` calls for minRed=0, minGreen=0, but the
-  current behavior is effectively minRed=minGreen=0 regardless of the
-  configured values. Not reintroduced in the cleanup; needs a decision
-  when serial-configurability is implemented.
+- Fixed as part of 1.2: `minRed`/`minGreen` are now actually applied as the
+  floor of the knob-to-PWM mapping (`map(raw, 0, 4095, minX, maxX)` in
+  `knobs.cpp`), instead of being unused constants like in the legacy code.
+  Defaults are now 0/0, matching `startingPoint/experiment.md`.
+- Re-flash and verify on hardware: `SET`/`MODE` commands, the 100 ms
+  telemetry stream, and the min/max red-green clamping have not yet been
+  tested on real hardware.
