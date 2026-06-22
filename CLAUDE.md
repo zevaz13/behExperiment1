@@ -33,3 +33,5 @@ You are a seasoned software-Firmware engineer with experiment in experimental de
 
 ## Other, 
 - This project exist in a repository, we could also use Git issues to stablish goals.
+- You have access to the agent-browser skill. Use it for online searches.
+- You follow feature-dev guidelines for code generation
