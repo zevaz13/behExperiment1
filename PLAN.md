@@ -18,42 +18,15 @@
       (legacy code repeated it as a workaround for an already-fixed bug).
 - [X] Build/flash-test on actual Teensy 4.0 + PCB hardware.
       - Code Builds and runs.
-      - Issues were detected with the flickering. Both the yellow and red+green Combination are been used at the same time.
+      - Issues were detected with the flickering. Both the yellow and red+green Combination are been used at the same time. These must be out of fase. First part of the period for RED+Green (No Yellow), second part for Yellow (No Red+green)
 ### 1.1 Solve Flickering issues
-      - Lets improve the ambiguity here and use only one timer to govern all the 3 LEDs. Follow:
-      IntervalTimer timerFlicker;  // <-- One TImer for the 3 LEDs
+- [x] `flicker.cpp` now uses a single `IntervalTimer` whose ISR alternates
+      between two strictly exclusive phases: RED+GREEN on/AMBER off, then
+      AMBER on/RED+GREEN off. Public API (`flickerInit/Start/SetRedGreen/
+      Stop`) unchanged, so `trial.cpp`/`knobs.cpp` needed no changes.
+- [x] Re-flash and verify on hardware that RED+GREEN and AMBER no longer
+      overlap.
 
-      // -------------------- Master Flicker ISR --------------------
-      void flickerISR() {
-      flickerPhase = !flickerPhase;
-
-      if (!flickerPhase) {
-            // PHASE A: RED + GREEN ON, YELLOW OFF
-            analogWrite(RED,   enableRed   ? currentRed   : 0);
-            analogWrite(GREEN, enableGreen ? currentGreen : 0);
-            analogWrite(AMBER, 0);
-      } else {
-            // PHASE B: RED + GREEN OFF, YELLOW ON
-            analogWrite(RED,   0);
-            analogWrite(GREEN, 0);
-            analogWrite(AMBER, enableYellow ? currentYellow : 0);
-      }
-      }
-
-// -------------------- Start/Stop Flicker --------------------
-void startFlicker() {
-    flickerPhase = false;  // reset phase every trial
-    timerFlicker.begin(flickerISR, halfPeriod * 1000);
-}
-
-void stopFlicker() {
-    timerFlicker.end();
-
-    // Ensure LEDs are OFF between trials
-    analogWrite(RED,   0);
-    analogWrite(GREEN, 0);
-    analogWrite(AMBER, 0);
-}
 ### 1.2 Configure 
 - [ ] Make flicker frequency, amber/yellow reference, max red/green, and
       min red/green configurable via serial commands (currently constants

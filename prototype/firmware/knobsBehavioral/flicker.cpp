@@ -7,31 +7,29 @@
 
 namespace {
 
-IntervalTimer amberTimer;
-IntervalTimer redTimer;
-IntervalTimer greenTimer;
+// A single timer governs both phases of the cycle, so RED+GREEN and AMBER
+// are always strictly out of phase with each other (no half-period where
+// both or neither are lit).
+IntervalTimer flickerTimer;
 
 volatile int currentAmber = 0;
 volatile int currentRed   = 0;
 volatile int currentGreen = 0;
 
-volatile bool amberOn = false;
-volatile bool redOn   = false;
-volatile bool greenOn = false;
+volatile bool redGreenPhase = false;
 
-void toggleAmber() {
-  amberOn = !amberOn;
-  analogWrite(kAmberPin, amberOn ? currentAmber : 0);
-}
+void flickerISR() {
+  redGreenPhase = !redGreenPhase;
 
-void toggleRed() {
-  redOn = !redOn;
-  analogWrite(kRedPin, redOn ? currentRed : 0);
-}
-
-void toggleGreen() {
-  greenOn = !greenOn;
-  analogWrite(kGreenPin, greenOn ? currentGreen : 0);
+  if (redGreenPhase) {
+    analogWrite(kRedPin, currentRed);
+    analogWrite(kGreenPin, currentGreen);
+    analogWrite(kAmberPin, 0);
+  } else {
+    analogWrite(kRedPin, 0);
+    analogWrite(kGreenPin, 0);
+    analogWrite(kAmberPin, currentAmber);
+  }
 }
 
 }  // namespace
@@ -48,11 +46,9 @@ void flickerStart(int redValue, int greenValue, int amberValue) {
   currentRed   = redValue;
   currentGreen = greenValue;
   currentAmber = amberValue;
-  amberOn = redOn = greenOn = false;
+  redGreenPhase = false;
 
-  amberTimer.begin(toggleAmber, kFlickerHalfPeriodUs);
-  redTimer.begin(toggleRed, kFlickerHalfPeriodUs);
-  greenTimer.begin(toggleGreen, kFlickerHalfPeriodUs);
+  flickerTimer.begin(flickerISR, kFlickerHalfPeriodUs);
 }
 
 void flickerSetRedGreen(int redValue, int greenValue) {
@@ -61,9 +57,7 @@ void flickerSetRedGreen(int redValue, int greenValue) {
 }
 
 void flickerStop() {
-  amberTimer.end();
-  redTimer.end();
-  greenTimer.end();
+  flickerTimer.end();
 
   currentAmber = currentRed = currentGreen = 0;
   analogWrite(kAmberPin, 0);
