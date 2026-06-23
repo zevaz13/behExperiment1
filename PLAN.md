@@ -377,8 +377,52 @@
       highlighting by nearest level, baselines not marking cells, progress, and
       GRID DONE. Not yet run against real hardware.
 - Wrote `docs/grid-gui-usage.md`.
-
-### 4. Firmware + GUI integration (not started)
+### 4. Behavioral experiment and Grid experiment Firmware integration.
+- [x] Produce a new single arduino project that uses the modules created in /prototype/firmware/ and is able to perform both experiments with the relevant conditions for each of them.
+      Built `prototype/firmware/experimentStimControl/` (Teensy 4.0). Decisions
+      (confirmed with the user):
+      - Settings fully separate per experiment, no shared fields (even
+        `flickerFrequencyHz`/`amberValue` are independent), since the two
+        experiments were tuned with different default ranges
+        (`behavioralSettings.{h,cpp}` / `gridSettings.{h,cpp}`, separate
+        `BehavioralMode`/`GridMode` enums).
+      - One shared `flicker.{h,cpp}`: the single-timer alternating ISR was
+        already nearly identical between the two source projects: superset
+        API (`flickerStart(red, green, amber, frequencyHz)`,
+        `flickerSetRedGreen`, `flickerFreeze`, `flickerSetAllOn` for
+        behavioral; `flickerSteadyAmber` for grid baselines; `flickerStop`
+        unifies behavioral's old `flickerStop`/grid's old `flickerOff`).
+        Frequency is now passed in by the caller rather than queried
+        internally, since there's no longer one settings module to ask.
+      - Shared `pins.h` (identical pin numbers in both source trees, same
+        PCB) and a minimal shared `config.h` (serial baud, PWM resolution).
+      - Everything else duplicated with `behavioral`/`grid`-prefixed
+        files and symbols (functions, the `BehavioralMode`/`GridMode`
+        enums) to avoid collisions when compiled as one sketch:
+        `behavioralKnobs/Trial/Telemetry/Dataframe.{h,cpp}`,
+        `gridSequence/Trial/Dataframe.{h,cpp}`.
+      - Mutual exclusion: `BEHAVIORALSTART` is rejected with
+        `"Grid trial active"` while a grid run is active, and vice versa
+        (`"Behavioral trial active"` for `GRIDSTART`), since both drive the
+        same physical LEDs/trigger pin.
+- [x] The new file should be called experimentStimControl 
+      (`prototype/firmware/experimentStimControl/experimentStimControl.ino`).
+- [x] Each experiment should have own commands to start, stop and get in the advanced mode.
+      Fully symmetric, no shared verbs: `BEHAVIORALSTART`/`BEHAVIORALSTOP`/
+      `BEHAVIORALMODE DEFAULT|ADVANCED`/`BEHAVIORALSET`/`BEHAVIORALGET` and
+      `GRIDSTART [order]`/`GRIDSTOP`/`GRIDMODE DEFAULT|ADVANCED`/`GRIDSET`/
+      `GRIDGET`. This renames behavioral's old bare `START`/`STOP`/`MODE`/
+      `SET`/`GET` — a breaking protocol change that the existing GUIs (both
+      still point at the old per-experiment firmware/protocol) will need to
+      pick up in milestone 5.
+      Wrote `docs/experimentStimControl-configure.md`.
+- [ ] Flash and verify on real Teensy 4.0 + PCB hardware: both experiments
+      individually, and the mutual-exclusion rejection in both directions.
+      Not yet built/flashed — no Arduino toolchain available in this
+      (WSL2/Linux) environment; reviewed manually for symbol/include
+      consistency only.
+ 
+### 5. Firmware + GUI integration (not started)
 - [ ] End-to-end test of new firmware against new/updated GUI.
 
 ## Known gaps surfaced during cleanup
