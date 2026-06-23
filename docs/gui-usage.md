@@ -24,7 +24,8 @@ dropdown and a "Connect" button appear so you can pick one manually.
 
 Pick a **save folder** (remembered between launches). The folder holds all
 data files plus a `participants.csv` database that tracks who has been run
-there and in which group. Then either:
+there, in which group, and the stimulator configuration each session used
+(mode and the six settings, one column per session). Then either:
 
 - **Existing participant** — pick someone already in this folder's database
   from the dropdown; a new session is added to them.
@@ -65,6 +66,9 @@ and how it affects the experiment.
   right. The table is **auto-saved** to the session file on every press, so
   data is never lost if the app closes. Rows accumulate for the whole
   session — they're cleared only when you go Back and start another session.
+- A red star on the plot marks the running median of all presses so far, and
+  its numeric value is shown as a **Median  Red: x  Green: y** label directly
+  under the table (updated on every press).
 - **Stop** — ends the session (sends `STOP`). The firmware also lets a
   session run indefinitely through any number of button presses without a
   new Start; see `docs/configure.md`'s pacing section.

@@ -274,16 +274,109 @@
             hardware.
       - Updated `docs/gui-usage.md`.
 ### 2.6. Final details
-- [ ] Please add selected configuration of the stimulator to the metadata database. That is, the configuration for the experiment is saved. 
-- [ ] Please show the current median under the right panel table.  That is, when computed, we show the median coordinate in numerical format. 
+- [x] The stimulator configuration each session ran with is now saved to the
+      metadata database: `participants.csv` gained one column per setting
+      (`mode, flickerFrequencyHz, amberValue, maxRed, maxGreen, minRed,
+      minGreen`), written alongside the existing session row in
+      `record_session()`. `SessionPage` stores the resolved `Settings` and
+      passes them through on Start. (Separate columns over a single packed
+      string, per the user, so they're filterable in a spreadsheet.)
+- [x] The current median is shown numerically under the right-side table: a
+      "Median  Red: x  Green: y" label below the table, updated on every press
+      (same values as the red star marker on the plot), reset to "Median: -"
+      when a new session is configured.
+- [x] Verified offscreen with a fake serial link: config columns written with
+      the right header/values, median label formatting and reset. Not yet run
+      against real hardware.
+- Updated `docs/gui-usage.md`.
 
 ### 3. Grid Experiment Firmware
-### 3.1. Grid experiment details
-- [ ] Review the code in /startingPoint/eegEXP_grid_fixed.
-- [ ] Summarize the grid experiment's firmware in /startingPoint/grid.md.  
-- [ ] Suggest all changes needed so only the grid experiment is present.
-- [ ] The solution must be modular, like the one for the behavioral experiment.  
-- [ ] The solution must fit with the implementation of the behavioral experiment. 
+### 3.1. Grid experiment details (analysis + plan; implementation later)
+- [x] Reviewed `startingPoint/eegEXP_grid_fixed/eegEXP_grid_fixed.ino`.
+- [x] Summarized the grid firmware in `startingPoint/grid.md`: what the
+      experiment is (automatic EEG stimulus presentation, no knobs/button),
+      how the current code works (sequence generation, presentation, three
+      drifting flicker timers, two-step `grid`/`@order!` protocol, "fixed"
+      mode), and its problems (same pre-rewrite issues as the behavioral
+      firmware, baseline off-by-one, dead `Bounce2`/analog-input/`pressFlag`
+      code, no machine-readable stream).
+- [x] Suggested the changes so only the grid remains: drop "fixed" mode and
+      all dead code (decided with the user).
+- [x] Modular plan (mirrors `knobsBehavioral/`): new `prototype/firmware/
+      gridEEG/` with `pins/config/settings/flicker/sequence/trial/dataframe/
+      serial_commands` modules, single-timer flicker, a non-blocking `millis()`
+      state machine (drops TeensyThreads), and the ten configurable settings
+      from CLAUDE.md (flicker freq, amber, min/max red/green, trial length,
+      intertrial wait, baselines start/end). Documented in `grid.md`; to be
+      built in the implementation milestone.
+- [x] Fit with behavioral: same `SET`/`GET`/`MODE` config design and a
+      parser-compatible dataframe; distinct `GRIDSTART <order>`/`GRIDSTOP`
+      start/stop so a future combined firmware can't confuse the two. Pins are
+      identical to the behavioral PCB. Open questions for implementation are
+      listed at the end of `grid.md`.
+### 3.2 Implementation of grid experiment Firmware
+- [x] Built the modular grid firmware in `prototype/firmware/gridEEG/`
+      (self-contained, own copies of the shared modules), mirroring
+      `knobsBehavioral/`: `pins.h`, `config.h`, `settings.{h,cpp}`,
+      `flicker.{h,cpp}` (single-timer ISR, plus steady-amber for baselines and
+      all-off for intertrials), `sequence.{h,cpp}` (grid generation),
+      `trial.{h,cpp}` (non-blocking `millis()` state machine), `dataframe.{h,cpp}`,
+      `serial_commands.{h,cpp}`, `gridEEG.ino`.
+- [x] Dropped TeensyThreads entirely: the presentation is a state machine
+      (Active -> Intertrial, advanced from `loop()`), the flicker runs on one
+      `IntervalTimer`. Removed the "fixed" mode and all dead code (Bounce2,
+      analog inputs, pressFlag, `~~~`). Fixed the baseline off-by-one.
+- [x] Commands `GRIDSTART [order]` / `GRIDSTOP` (distinct from behavioral
+      START/STOP), plus the shared `SET`/`GET`/`MODE DEFAULT|ADVANCED`.
+- [x] Eleven configurable settings: flickerFrequencyHz, amberValue,
+      minRed/maxRed, minGreen/maxGreen, trialLengthMs, interTrialWaitMs,
+      baselinesStart, baselinesEnd, order.
+- [x] `order` is a configurable setting (default 1, clamped to 1-4) used when
+      `GRIDSTART` has no argument; `GRIDSTART <order>` overrides it for one run
+      without changing the stored value (per the user's note).
+- [x] Data stream reuses the behavioral 6-field shape so a future combined GUI
+      can share one parser: `TriggerCue@StimNumber@Amber@Red@Green@Phase` (phase
+      0=baseline, 1=stimulus, 2=intertrial), one frame at each trial onset and
+      offset.
+- [x] Host-tested the sequence generator (the diagonal/order/linspace logic):
+      all 4 orders produce 100 unique stimuli covering the full 10x10 grid with
+      the correct start corners.
+- [x] Flash + verify on real Teensy 4.0 hardware (LED phasing, trigger pulses,
+      timing, GET/SET, the full baseline/grid/baseline run, GRID DONE).
+- Wrote `docs/grid-configure.md` (commands, settings, procedure, data format).
+- [x] Command names: GRIDSTART <order> / GRIDSTOP acceptable. If only GRIDstart it uses order = 1.  /
+- [x] order should be SET setting.  /
+- [x] Implement this in a Directory name /prototype/firmware/gridEEG
+
+### 3.3 Grid Experiment GUI.
+- [x] New self-contained GUI in `prototype/grid_gui/` (its own `uv` app),
+      adapting the behavioral GUI's patterns: `serial_link.py` (copied),
+      `protocol.py` (grid GET = 11 settings, grid frame, GRIDSTART/SET),
+      `main_window.py`, `main.py`. Flow: Connect -> Participant -> Mode ->
+      Session.
+- [x] Connects to the Teensy (auto-detect by vendor ID + manual fallback).
+      Participant screen collects Subject ID + group, shown during the run but
+      NOT saved (resolved the item 2 vs item 9 contradiction with the user:
+      participant screen yes, no file/DB logging).
+- [x] Mode screen: Default (one click) or Advanced (form of the 11 settings,
+      pre-filled from GET, `order` constrained 1-4).
+- [x] Session screen shows the 10x10 grid of stimulus coordinates (red x,
+      green y); axis limits are the configured min/max red/green. Points start
+      dim gray, turn bold yellow as each stimulus is presented, and the current
+      stimulus is highlighted red. Cells are matched by nearest (red,green)
+      level, so the GUI never needs the firmware's traversal/order logic;
+      baseline frames (red=green=0) deliberately don't mark a grid cell.
+- [x] Progress bar over all trials (baselinesStart + 100 + baselinesEnd),
+      advanced on each intertrial frame and completed on `GRID DONE`.
+- [x] The active GET configuration (+ participant) is shown at the top of the
+      session screen.
+- [x] Same WSL/Windows split as the behavioral GUI (offscreen-testable;
+      `UV_PROJECT_ENVIRONMENT=.venv-linux` on Linux).
+- [x] Verified end-to-end under `QT_QPA_PLATFORM=offscreen` with a fake link:
+      Default and Advanced paths, the multi-assignment SET, grid cell
+      highlighting by nearest level, baselines not marking cells, progress, and
+      GRID DONE. Not yet run against real hardware.
+- Wrote `docs/grid-gui-usage.md`.
 
 ### 4. Firmware + GUI integration (not started)
 - [ ] End-to-end test of new firmware against new/updated GUI.

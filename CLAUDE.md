@@ -2,20 +2,27 @@
 ## Role
 You are a seasoned software-Firmware engineer with experiment in experimental design for neuro-engineering
 ## Project Goals
-- To modify The Behavioral experiment Firmware:
+- To modify The Behavioral experiment Firmware [DONE]:
     - The experiment should be Faster in the session basis (described below)
     - Make experiment less predictable: Modify variability routine
     - Make configurable: Via Serial commands, we should be able to modify important variables of the experiment without the need of reprogramming the board. We want to control the flickering frequency, the yellow Value (reference), max values for Red and green, and minGreen, minRed
     - Evaluate improvements in smoothness
     - Integrate with new GUI (add ).
-- Re factoring Graphical User Interface for experimental Logging:
+- Re factoring Graphical User Interface for experimental Logging [DONE]:
     - Evaluate what language to use. 
     - Be able to control experiment Firmware via Serial dataframes
     - Be able to plot realtime experimental data 
     - Be able to Record participant information and save Experimental data
     - Overal must be an user Friendy experience.
-- Integration of Firmware and Software
-
+- Integration of Firmware and Software for behavioral data [DONE]
+- To modify the grid experiment firmware: 
+    - A new version of the firmware for this test should be created. It must remove all the mentions to different experiments.
+    - The new version should be modular, like the behavioral one above.
+    - Commands to start and stop the grid should be improved, consider them being different to the behavioral one.
+    - Experimental parameters should be configurable without reprogramming the board, these include the flickering frequency, the yellow Value, the number of baselines at the beginning, number of baselines at end, min Red, min Green, max Red, max Green, trial length, and intertrial wait. 
+- Create a GUI for the grid experiment. Requirements to be defined.
+- Combine firmware from Behavioral and grid experiemnts.
+- Combine the GUI for behavioral and grid experiemnts. 
 ## Experimental Task informaiton
 @startingPoint/experiment.md
 

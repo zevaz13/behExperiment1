@@ -1,0 +1,10 @@
+[project]
+name = "gridgui"
+version = "0.1.0"
+description = "GUI for the grid (EEG) experiment"
+requires-python = ">=3.12"
+dependencies = [
+    "pyqtgraph>=0.14.0",
+    "pyserial>=3.5",
+    "pyside6>=6.11.1",
+]

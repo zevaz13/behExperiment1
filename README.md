@@ -11,12 +11,16 @@ knobs, and a GUI that controls the firmware over serial and logs data.
 ## Repo layout
 
 ```
-prototype/firmware/knobsBehavioral/   current firmware (Teensy 4.0, Arduino IDE)
-prototype/gui/                        current GUI (Python, uv-managed)
+prototype/firmware/knobsBehavioral/   behavioral (knobs) firmware (Teensy 4.0)
+prototype/firmware/gridEEG/           grid (EEG) firmware (Teensy 4.0)
+prototype/gui/                        behavioral GUI (Python, uv-managed)
+prototype/grid_gui/                   grid GUI (Python, uv-managed)
 startingPoint/                        original firmware and GUI (reference, untouched)
-docs/configure.md                     serial commands and experimental procedure
-docs/firmware-architecture.md         firmware module design
-docs/gui-usage.md                     GUI screens and controls
+docs/configure.md                     behavioral: serial commands and procedure
+docs/firmware-architecture.md         behavioral: firmware module design
+docs/gui-usage.md                     behavioral: GUI screens and controls
+docs/grid-configure.md                grid: serial commands and procedure
+docs/grid-gui-usage.md                grid: GUI screens and controls
 PLAN.md                               milestones and status
 CLAUDE.md                             project goals and coding standards
 ```

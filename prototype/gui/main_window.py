@@ -314,6 +314,7 @@ class SessionPage(QWidget):
         self._group = ""
         self._session_number = 0
         self._run_file: Path | None = None
+        self._settings: Settings | None = None
 
         self._status_label = QLabel("Not started")
         self._start_button = QPushButton("Start")
@@ -347,6 +348,7 @@ class SessionPage(QWidget):
         self._table.setHorizontalHeaderLabels(["Trial", "Red", "Green"])
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self._table.verticalHeader().setVisible(False)
+        self._median_label = QLabel("Median: -")
 
         button_row = QHBoxLayout()
         button_row.addWidget(self._start_button)
@@ -354,9 +356,13 @@ class SessionPage(QWidget):
         button_row.addWidget(self._back_button)
         button_row.addWidget(self._save_button)
 
+        table_column = QVBoxLayout()
+        table_column.addWidget(self._table)
+        table_column.addWidget(self._median_label)
+
         plot_and_table = QHBoxLayout()
         plot_and_table.addWidget(self._plot, stretch=3)
-        plot_and_table.addWidget(self._table, stretch=1)
+        plot_and_table.addLayout(table_column, stretch=1)
 
         layout = QVBoxLayout(self)
         layout.addLayout(button_row)
@@ -383,8 +389,10 @@ class SessionPage(QWidget):
         self._median_marker.setData([], [])
         self._current_marker.setData([], [])
         self._table.setRowCount(0)
+        self._median_label.setText("Median: -")
         self._session_active = False
         self._run_file = None
+        self._settings = settings
         self._status_label.setText("Not started")
         self._update_button_states()
 
@@ -406,7 +414,7 @@ class SessionPage(QWidget):
         file_name = session_file_name(self._sub_id, self._session_number)
         self._run_file = self._folder / file_name
         self._write_table_to(self._run_file)
-        record_session(self._folder, participant, self._session_number, file_name)
+        record_session(self._folder, participant, self._session_number, file_name, self._settings)
 
     def _stop(self) -> None:
         self._send("STOP")
@@ -436,7 +444,10 @@ class SessionPage(QWidget):
             self._press_reds.append(frame.red)
             self._press_greens.append(frame.green)
             self._press_marks.setData(self._press_reds, self._press_greens)
-            self._median_marker.setData([median(self._press_reds)], [median(self._press_greens)])
+            red_median = median(self._press_reds)
+            green_median = median(self._press_greens)
+            self._median_marker.setData([red_median], [green_median])
+            self._median_label.setText(f"Median  Red: {red_median:g}  Green: {green_median:g}")
             self._append_table_row(frame.trial_number, frame.red, frame.green)
             if self._run_file is not None:
                 self._write_table_to(self._run_file)
