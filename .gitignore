@@ -8,10 +8,13 @@ obj/
 *.elf
 build/
 
-# Python (uv)
+# Python (uv) - separate venv dirs per OS, see PLAN.md / README.md
 .venv/
+.venv-*/
 __pycache__/
 *.pyc
+*.egg-info/
+dist/
 
 # OS / editor
 .DS_Store

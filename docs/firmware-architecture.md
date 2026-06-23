@@ -204,12 +204,23 @@ STOP (from any non-Idle state) -> Idle
   `trialPoll()`, called every `loop()` iteration, advances this timing.
 - **OnBreak**: all LEDs off for `kBreakDurationMs` (2 s). When the break
   ends, `beginNextSearch()` computes the next search's target as
-  `clamp(lastPress +/- randomJump(), minX, maxX)` for each channel
-  independently and calls `startSearch()`.
+  `clamp(lastPress +/- randomJump(), minX + margin, maxX - margin)` for each
+  channel independently and calls `startSearch()`. The `margin =
+  (maxX - minX) / kStartMarginDivisor` (5) keeps the start clear of the
+  range edges — see `startMargin()` below.
 - `startSearch(targetRed, targetGreen)` increments `trialNumber`, anchors
   the knobs to the target, starts the flicker there, and re-enters
   `Searching` — this is also how the very first search of a session starts,
-  with an explicit target of `(0, 0)`.
+  with a target of `(minX + margin, minY + margin)` (the low interior
+  corner) rather than the exact `(0, 0)` origin.
+- `startMargin(minV, maxV)` = `(maxV - minV) / kStartMarginDivisor`. Anchoring
+  a search to the exact edge of the range puts the knob's raw ADC reading on
+  the `wrapToAdcRange` modulo-4096 boundary, where a couple of units of ADC
+  noise flip the mapped output between min and max — the participant sees the
+  LEDs cycle wildly before they've touched anything. Constraining every
+  search's start to `[minX + margin, maxX - margin]` keeps the anchored
+  reading clear of that boundary. The full `[min, max]` range stays reachable
+  by turning the knob; only the start point is held inside the margin.
 - `randomJump()`: magnitude drawn uniformly from `[kWalkJumpMin,
   kWalkJumpMax]` (500-1500) with an independent random sign, so the next
   search's start is always a real, noticeable move from the last button

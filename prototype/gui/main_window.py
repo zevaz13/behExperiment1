@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from statistics import median
 
 import serial
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import QSettings, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QPushButton,
     QRadioButton,
@@ -26,6 +28,15 @@ from PySide6.QtWidgets import (
 )
 from pyqtgraph import PlotWidget
 
+from participants import (
+    DEFAULT_GROUP,
+    GROUPS,
+    Participant,
+    next_session_number,
+    read_participants,
+    record_session,
+    session_file_name,
+)
 from protocol import SETTING_NAMES, Settings, build_set_command, parse_dataframe, parse_get_response
 from serial_link import SerialLink, find_teensy_port, list_all_ports
 
@@ -183,6 +194,107 @@ class ModePage(QWidget):
         self.mode_confirmed.emit(resolved)
 
 
+class ParticipantPage(QWidget):
+    """Pick a save folder, then add a session to an existing participant in
+    that folder or create a new one (subject ID + group). The folder's
+    participants.csv is the source of truth for who already exists."""
+
+    participant_confirmed = Signal(str, str, str)  # sub_id, group, folder
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._settings = QSettings("behExperiment1", "KnobsGui")
+
+        self._folder_edit = QLineEdit(self._settings.value("save_folder", ""))
+        self._folder_edit.setReadOnly(True)
+        browse_button = QPushButton("Browse...")
+        browse_button.clicked.connect(self._choose_folder)
+        folder_row = QHBoxLayout()
+        folder_row.addWidget(QLabel("Save folder:"))
+        folder_row.addWidget(self._folder_edit, 1)
+        folder_row.addWidget(browse_button)
+
+        self._existing_radio = QRadioButton("Existing participant")
+        self._new_radio = QRadioButton("New participant")
+        self._new_radio.setChecked(True)
+        self._existing_radio.toggled.connect(self._update_enabled)
+        self._existing_combo = QComboBox()
+
+        self._sub_id_edit = QLineEdit()
+        self._group_combo = QComboBox()
+        self._group_combo.addItems(GROUPS)
+        self._group_combo.setCurrentText(DEFAULT_GROUP)
+        new_form = QFormLayout()
+        new_form.addRow("Subject ID", self._sub_id_edit)
+        new_form.addRow("Group", self._group_combo)
+        self._new_group = QGroupBox("New participant")
+        self._new_group.setLayout(new_form)
+
+        self._error_label = QLabel("")
+        continue_button = QPushButton("Continue")
+        continue_button.clicked.connect(self._confirm)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(folder_row)
+        layout.addWidget(self._existing_radio)
+        layout.addWidget(self._existing_combo)
+        layout.addWidget(self._new_radio)
+        layout.addWidget(self._new_group)
+        layout.addWidget(self._error_label)
+        layout.addWidget(continue_button)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._reload_participants()
+
+    def _choose_folder(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Select save folder", self._folder_edit.text())
+        if folder:
+            self._folder_edit.setText(folder)
+            self._settings.setValue("save_folder", folder)
+            self._reload_participants()
+
+    def _reload_participants(self) -> None:
+        self._existing_combo.clear()
+        folder = self._folder_edit.text()
+        participants = read_participants(Path(folder)) if folder else []
+        for participant in participants:
+            self._existing_combo.addItem(f"{participant.sub_id} ({participant.group})", participant)
+        self._existing_radio.setEnabled(bool(participants))
+        if not participants:
+            self._new_radio.setChecked(True)
+        self._update_enabled()
+
+    def _update_enabled(self) -> None:
+        existing = self._existing_radio.isChecked()
+        self._existing_combo.setEnabled(existing)
+        self._new_group.setEnabled(not existing)
+
+    def _confirm(self) -> None:
+        folder = self._folder_edit.text()
+        if not folder:
+            self._error_label.setText("Choose a save folder first.")
+            return
+        if self._existing_radio.isChecked():
+            participant = self._existing_combo.currentData()
+            if participant is None:
+                self._error_label.setText("Select a participant.")
+                return
+            sub_id, group = participant.sub_id, participant.group
+        else:
+            sub_id = self._sub_id_edit.text().strip()
+            if not sub_id:
+                self._error_label.setText("Enter a subject ID.")
+                return
+            existing_ids = {self._existing_combo.itemData(i).sub_id for i in range(self._existing_combo.count())}
+            if sub_id in existing_ids:
+                self._error_label.setText(f"{sub_id} already exists; pick it under Existing participant.")
+                return
+            group = self._group_combo.currentText()
+        self._error_label.setText("")
+        self.participant_confirmed.emit(sub_id, group, folder)
+
+
 class SessionPage(QWidget):
     """Start/Stop controls, the live red/green scatter plot, and a log of
     button-press results. "Back" is only enabled while no session is
@@ -196,6 +308,12 @@ class SessionPage(QWidget):
         self._session_active = False
         self._press_reds: list[int] = []
         self._press_greens: list[int] = []
+
+        self._folder: Path | None = None
+        self._sub_id = ""
+        self._group = ""
+        self._session_number = 0
+        self._run_file: Path | None = None
 
         self._status_label = QLabel("Not started")
         self._start_button = QPushButton("Start")
@@ -247,6 +365,11 @@ class SessionPage(QWidget):
 
         self._update_button_states()
 
+    def set_participant(self, folder: Path, sub_id: str, group: str) -> None:
+        self._folder = folder
+        self._sub_id = sub_id
+        self._group = group
+
     def start_session(self, link: SerialLink, settings: Settings) -> None:
         if self._link is None:
             self._link = link
@@ -261,6 +384,7 @@ class SessionPage(QWidget):
         self._current_marker.setData([], [])
         self._table.setRowCount(0)
         self._session_active = False
+        self._run_file = None
         self._status_label.setText("Not started")
         self._update_button_states()
 
@@ -268,9 +392,21 @@ class SessionPage(QWidget):
         self._plot.setYRange(settings.min_green, settings.max_green, padding=0)
 
     def _start(self) -> None:
+        if self._run_file is None:
+            self._open_run_file()
         self._send("START")
         self._session_active = True
         self._update_button_states()
+
+    def _open_run_file(self) -> None:
+        # One file per session, named SubID_R{next}.txt, created with its
+        # header when the session starts; autosaved on every press after.
+        participant = Participant(self._sub_id, self._group)
+        self._session_number = next_session_number(self._folder, self._sub_id)
+        file_name = session_file_name(self._sub_id, self._session_number)
+        self._run_file = self._folder / file_name
+        self._write_table_to(self._run_file)
+        record_session(self._folder, participant, self._session_number, file_name)
 
     def _stop(self) -> None:
         self._send("STOP")
@@ -291,7 +427,10 @@ class SessionPage(QWidget):
         if frame is None:
             return
         self._current_marker.setData([frame.red], [frame.green])
-        self._status_label.setText(f"Search {frame.trial_number}, last Press={frame.press}")
+        self._status_label.setText(
+            f"{self._sub_id} ({self._group}) session R{self._session_number}  |  "
+            f"Search {frame.trial_number}, last Press={frame.press}"
+        )
 
         if frame.press == 1:
             self._press_reds.append(frame.red)
@@ -299,6 +438,8 @@ class SessionPage(QWidget):
             self._press_marks.setData(self._press_reds, self._press_greens)
             self._median_marker.setData([median(self._press_reds)], [median(self._press_greens)])
             self._append_table_row(frame.trial_number, frame.red, frame.green)
+            if self._run_file is not None:
+                self._write_table_to(self._run_file)
 
     def _append_table_row(self, trial_number: int, red: int, green: int) -> None:
         row = self._table.rowCount()
@@ -309,8 +450,10 @@ class SessionPage(QWidget):
 
     def _save_results(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, "Save Results", "results.txt", "Text files (*.txt)")
-        if not path:
-            return
+        if path:
+            self._write_table_to(Path(path))
+
+    def _write_table_to(self, path: Path) -> None:
         with open(path, "w") as results_file:
             results_file.write("Trial Red Green\n")
             for row in range(self._table.rowCount()):
@@ -333,14 +476,20 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Knobs Experiment")
 
         self._connect_page = ConnectPage()
+        self._participant_page = ParticipantPage()
         self._mode_page = ModePage()
         self._session_page = SessionPage()
 
         self._stack = QStackedWidget()
         self._stack.addWidget(self._connect_page)
+        self._stack.addWidget(self._participant_page)
         self._stack.addWidget(self._mode_page)
         self._stack.addWidget(self._session_page)
         self.setCentralWidget(self._stack)
+
+        self._folder: Path | None = None
+        self._sub_id = ""
+        self._group = ""
 
         # Always-visible footer with the active configuration, regardless of
         # which page is showing.
@@ -348,31 +497,38 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self._settings_label, 1)
 
         self._connect_page.connected.connect(self._on_connected)
+        self._participant_page.participant_confirmed.connect(self._on_participant_confirmed)
         self._mode_page.mode_confirmed.connect(self._on_mode_confirmed)
         self._session_page.back_requested.connect(self._on_back_requested)
 
     def _on_connected(self, link: SerialLink, settings: Settings) -> None:
         self._link = link
-        self._mode_page.set_link_and_defaults(link, settings)
+        self._settings_label.setText(_format_settings(settings))
+        self._stack.setCurrentWidget(self._participant_page)
+
+    def _on_participant_confirmed(self, sub_id: str, group: str, folder: str) -> None:
+        self._sub_id = sub_id
+        self._group = group
+        self._folder = Path(folder)
+        # Re-query GET before showing the mode form, so it reflects whatever
+        # is currently active on the firmware (settings persist across modes).
+        self._link.line_received.connect(self._on_settings_for_mode)
+        self._link.send("GET")
+
+    def _on_settings_for_mode(self, line: str) -> None:
+        settings = parse_get_response(line)
+        if settings is None:
+            return
+        self._link.line_received.disconnect(self._on_settings_for_mode)
+        self._mode_page.set_link_and_defaults(self._link, settings)
         self._settings_label.setText(_format_settings(settings))
         self._stack.setCurrentWidget(self._mode_page)
 
     def _on_mode_confirmed(self, settings: Settings) -> None:
+        self._session_page.set_participant(self._folder, self._sub_id, self._group)
         self._session_page.start_session(self._link, settings)
         self._settings_label.setText(_format_settings(settings))
         self._stack.setCurrentWidget(self._session_page)
 
     def _on_back_requested(self) -> None:
-        # Re-query GET rather than reusing stale local state, since settings
-        # persist on the firmware regardless of mode (see docs/configure.md).
-        self._link.line_received.connect(self._on_settings_for_back)
-        self._link.send("GET")
-
-    def _on_settings_for_back(self, line: str) -> None:
-        settings = parse_get_response(line)
-        if settings is None:
-            return
-        self._link.line_received.disconnect(self._on_settings_for_back)
-        self._mode_page.set_link_and_defaults(self._link, settings)
-        self._settings_label.setText(_format_settings(settings))
-        self._stack.setCurrentWidget(self._mode_page)
+        self._stack.setCurrentWidget(self._participant_page)

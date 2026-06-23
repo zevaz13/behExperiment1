@@ -23,7 +23,8 @@ You are a seasoned software-Firmware engineer with experiment in experimental de
 - We use Teensy 4.0 and programme it using Arduino IDE, If there is something easier to work on, please tell.
 - We will create new directories for the new versions of the project these should exist in prototype/
 - If we decide to use python at a certain point, we must use "uv" as package manager. ONLY UV.
-- The GUI is written in c#, however we must evaluate other options to refactor the GUI.
+- The GUI refactor is in progress in `prototype/gui/`: Python (PySide6 + pyqtgraph + pyserial, managed by `uv`). The legacy C# WinForms GUI in `startingPoint/GUImetamers/` is kept as reference only, untouched.
+- The new GUI must run on native Windows, not WSL — the Teensy enumerates as a COM port that WSL2 can't see without extra passthrough setup. If developing/testing from WSL or Linux, set `UV_PROJECT_ENVIRONMENT=.venv-linux` there so the venv doesn't collide with the Windows one (see README.md).
 - Always keep a document called PLAN.md where we can communicate about the current plan of action. Write the current milestones to it, and checklists toward that.
 
 ## Coding standards

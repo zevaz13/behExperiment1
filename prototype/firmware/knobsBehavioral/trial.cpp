@@ -30,6 +30,13 @@ int clampToRange(int value, int minValue, int maxValue) {
   return value;
 }
 
+// How far in from each edge a search may start, so the anchored ADC reading
+// never sits on the modulo-4096 wrap boundary where noise flips the LEDs
+// between min and max (see kStartMarginDivisor).
+int startMargin(int minValue, int maxValue) {
+  return (maxValue - minValue) / kStartMarginDivisor;
+}
+
 // A random jump: magnitude in [kWalkJumpMin, kWalkJumpMax], random sign —
 // always a real move, never a negligible one.
 int randomJump() {
@@ -62,8 +69,12 @@ void enterBreak() {
 }
 
 void beginNextSearch() {
-  int targetRed   = clampToRange(lastPressRed   + randomJump(), settingsMinRed(),   settingsMaxRed());
-  int targetGreen = clampToRange(lastPressGreen + randomJump(), settingsMinGreen(), settingsMaxGreen());
+  int marginRed   = startMargin(settingsMinRed(),   settingsMaxRed());
+  int marginGreen = startMargin(settingsMinGreen(), settingsMaxGreen());
+  int targetRed   = clampToRange(lastPressRed   + randomJump(),
+                                 settingsMinRed()   + marginRed, settingsMaxRed()   - marginRed);
+  int targetGreen = clampToRange(lastPressGreen + randomJump(),
+                                 settingsMinGreen() + marginGreen, settingsMaxGreen() - marginGreen);
   startSearch(targetRed, targetGreen);
 }
 
@@ -99,7 +110,9 @@ void trialInit() {
 
 void trialStart() {
   trialNumber = 0;
-  startSearch(0, 0);
+  int targetRed   = settingsMinRed()   + startMargin(settingsMinRed(),   settingsMaxRed());
+  int targetGreen = settingsMinGreen() + startMargin(settingsMinGreen(), settingsMaxGreen());
+  startSearch(targetRed, targetGreen);
 }
 
 void trialStop() {

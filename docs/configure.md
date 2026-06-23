@@ -79,7 +79,9 @@ mode=ADVANCED flickerFrequencyHz=20 amberValue=500 maxRed=2800 maxGreen=2400 min
 2. Optionally configure the session: `MODE ADVANCED`, then any `SET`
    commands. Skip this to run with the `config.h` defaults. Send `GET` to
    confirm what's active before starting.
-3. Send `START`. The first search begins at the (0, 0) starting point:
+3. Send `START`. The first search begins just inside the low corner of the
+   range (a margin of `(max - min) / 5` in from `minRed`/`minGreen`, so the
+   LEDs don't jitter between min and max on a cold start):
    - The amber LED flickers at the fixed reference value; red/green flicker
      at whatever the knobs currently read, mapped into `[minRed, maxRed]` /
      `[minGreen, maxGreen]`.
@@ -93,8 +95,10 @@ mode=ADVANCED flickerFrequencyHz=20 amberValue=500 maxRed=2800 maxGreen=2400 min
    - Goes dark for a 2 s break. During the break, the next search's
      starting point is picked: the just-logged (red, green) location, each
      shifted by a random jump (magnitude 500-1500, random direction, so
-     it's always a real move), clamped to `[minRed, maxRed]` /
-     `[minGreen, maxGreen]`.
+     it's always a real move), clamped to the interior band
+     `[minRed + margin, maxRed - margin]` /
+     `[minGreen + margin, maxGreen - margin]` (margin = `(max - min) / 5`),
+     so no search starts on the range edge.
    - Automatically starts the next search at that point — back to step 3,
      no `START` needed.
 5. To end the session at any point (mid-search, mid-acknowledge, or

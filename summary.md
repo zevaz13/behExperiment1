@@ -14,16 +14,19 @@ under `prototype/`, tracked in `PLAN.md`.
 CLAUDE.md                              project goals, role, coding standards
 PLAN.md                                milestone tracker, updated after every change
 docs/
-  configure.md                         user-facing: commands, modes, experimental procedure
+  configure.md                         user-facing: firmware commands, modes, experimental procedure
   firmware-architecture.md             internals: module-by-module design of the new firmware
+  gui-usage.md                         user-facing: GUI screens and controls
 startingPoint/
   experiment.md                        spec for the original experiment
   knobsExperimentTeensy/knobsExperimentTeensy.ino   legacy, untouched firmware (reference only)
-  GUImetamers/                         legacy C# (.NET 8, WinForms) GUI (untouched so far)
-prototype/firmware/knobsBehavioral/    the new, modular firmware (see below)
+  GUImetamers/                         legacy C# (.NET 8, WinForms) GUI (untouched, reference only)
+prototype/
+  firmware/knobsBehavioral/            the new, modular firmware (see below)
+  gui/                                 the new GUI: Python, uv-managed (see below)
 .agents/skills/agent-browser/          agent-browser skill (web search)
 skills-lock.json
-.gitignore                             added; .NET bin/obj untracked
+.gitignore                             .NET bin/obj, Python .venv*/__pycache__, Arduino build artifacts
 ```
 
 ## What's been done, and why
@@ -179,6 +182,118 @@ than being fully independent each time.
   snapped to exactly 0, to suppress ADC noise jitter that would otherwise
   show up as small spurious nonzero readings when the true position is at
   or near the bottom of the range.
+- **Interior start points** (milestone 2.4): a search anchored to the exact
+  edge of the range puts the knob's raw ADC value on the modulo-4096 wrap
+  boundary, where a couple of units of noise flip the mapped output between
+  min and max — the LEDs visibly cycle before the participant has touched
+  anything. Fixed by keeping every search's start inside a margin of
+  `(max - min) / kStartMarginDivisor` (divisor 5) from each edge: the first
+  search now starts at the low interior corner instead of `(0, 0)`, and
+  `beginNextSearch()` clamps each target to `[min + margin, max - margin]`
+  instead of `[min, max]`. The full range stays reachable by turning the
+  knob; only the start point is constrained. Chosen over the
+  movement-threshold alternative for simplicity; divisor is a compile-time
+  constant like the other tuning values. Hardware-verified on Teensy 4.0.
+
+### 5. New GUI (`prototype/gui/`)
+
+CLAUDE.md calls for evaluating a replacement language/framework for the
+experiment logger GUI, and explicitly mandates `uv` if Python is chosen.
+Decisions made, in order:
+
+- **Stack** — Python + PySide6 (UI) + `pyqtgraph` (live plot, embedded as a
+  Qt widget) + `pyserial` (Teensy link), one integrated window. This wasn't
+  picked blind: I measured import/launch overhead for the candidates
+  (`python3`/`uv` are both on `PATH` already, no setup friction) —
+  PySide6+pyqtgraph comes to ~1.2-1.5s to a window (pyqtgraph's import is
+  the slow part, ~1s alone), versus ~300ms for PySide6+Dear PyGui or an
+  all-Dear-PyGui app. The faster combo was rejected once it became clear
+  Dear PyGui owns its own render loop/window and can't embed as a widget
+  inside a PySide6 window — the realistic alternative would've been two
+  separate top-level windows, which was judged worse UX than the slower
+  single-window option for a desktop research tool.
+- **Environment** — developed and run on native Windows (Windows Python +
+  `uv`), not WSL2, because the Teensy enumerates as a COM port that WSL2
+  can't see without `usbipd-win` passthrough. This surfaced a real,
+  non-obvious problem: a `.venv` built by Linux `uv` contains a `lib64`
+  symlink that Windows' `uv` can't remove through the `\\wsl$` UNC bridge,
+  so trying to reuse the same `.venv` directory from both OSes fails with a
+  cryptic file-removal error. Fixed by using
+  `UV_PROJECT_ENVIRONMENT=.venv-linux` whenever the project is run from
+  WSL/Linux, so each OS gets its own venv directory and neither has to
+  delete the other's.
+- **Connection flow** — auto-detect by PJRC's USB vendor ID (`0x16C0`),
+  auto-connect, blocking "Connecting..." screen; falls back to a manual
+  port dropdown after ~3s of no match (`ConnectPage`).
+- **Mode/settings screen** mirrors the firmware directly: Default sends
+  `MODE DEFAULT`; Advanced sends `MODE ADVANCED` plus one multi-assignment
+  `SET`. Advanced-mode field suggestions are read from a `GET` sent right
+  after connecting, not hardcoded — same "single source of truth" principle
+  used on the firmware side, so the GUI can't drift from whatever the
+  firmware actually has active.
+- **Live plot**: red on x, green on y, axis limits set with `padding=0` so
+  they're exactly `[minRed, maxRed]`/`[minGreen, maxGreen]` rather than
+  pyqtgraph's auto-padded default. Black background with a solid yellow
+  round marker for the live position (the marker was originally black,
+  which is invisible against black — caught once the background changed).
+  Each button press leaves a permanent gray X, accumulated for the whole
+  session and cleared only when a new session is configured.
+- **Side table** (Trial/Red/Green) appends one row per button press only
+  (not per telemetry tick), with a **Save Results** button that writes the
+  table to a `.txt` file (header line + space-separated rows) via a native
+  save dialog.
+- **"Back to experiment selection"** is enabled only while no session is
+  running (before the first Start, or after Stop) — disabled while running
+  so the firmware can't be left in an active session that the GUI has
+  navigated away from. The spec's literal wording ("only if they have
+  pressed stop") didn't say what should happen before the very first
+  Start; decided to allow Back there too, since nothing is running to
+  interrupt. Going back re-queries `GET` rather than trusting local state.
+- **Always-visible settings line**: a permanent label in the window's
+  status bar (not tied to any one page, so it survives every screen
+  transition) shows the active mode and all six settings as soon as
+  they're known.
+- Considered and explicitly rejected: re-sending `START`/`STOP` from a
+  manual mode page re-entry without a fresh `GET` first. Every place the
+  GUI needs to know the firmware's settings, it asks the firmware rather
+  than caching/duplicating values client-side.
+- **Median marker**: a fourth plot series — a red star at the per-channel
+  median (`statistics.median`) of all button-press locations so far this
+  session. Empty until the first press (no median of zero points), updated
+  alongside the gray X marks on every press, and deliberately does *not*
+  add a row to the results table — it's a derived summary, not a logged
+  data point.
+
+### 6. Participant / session management and per-session auto-save (`prototype/gui/`)
+
+Milestone 2.5 ported the "create participants, save data to files" role the
+legacy C# GUI had. Decisions, with the user:
+
+- **Database location** — a `participants.csv` lives *inside each chosen save
+  folder* rather than one global app-level DB. Chosen so the data files and
+  their metadata travel together (copy/move the folder and nothing breaks)
+  and "participants in the current folder" is simply that folder's DB, with
+  no cross-folder path bookkeeping that could drift from the files.
+- **Format** — CSV (the user's call), one row per session
+  (`sub_id, group, session, file, datetime`); the *participants* in a folder
+  are the distinct subject IDs across its rows. A new module `participants.py`
+  owns all DB and filename logic (pure stdlib, no Qt), with the legacy-style
+  "first index whose file doesn't exist" session-number scan so a new session
+  never overwrites an old file.
+- **New `ParticipantPage`** (Connect -> Participant -> Mode -> Session): pick a
+  save folder (remembered across launches via `QSettings`), then add a session
+  to an existing participant in that folder or create a new one. New
+  participants get a `Group` dropdown `{HC, PD, MD, Protan, Deutan, other}`
+  (default `HC`), recorded once at creation and shown read-only afterward.
+- **Per-session file + auto-save** — each session is one file
+  `{SubID}_R{n}.txt`, created with its `Trial Red Green` header when the
+  session starts (not lazily on first press — the user's choice), then
+  rewritten from the table on *every* button press, so the file always equals
+  the right-side table and a crash/close can't lose data. The old manual
+  "Save Results..." stays as an optional extra export.
+- **Back** now returns to the Participant screen (was the Mode screen) so a
+  different participant or a new session can be started without relaunching;
+  the Mode form is still re-populated from a fresh `GET` each time into it.
 
 ## Documentation produced
 
@@ -190,9 +305,12 @@ than being fully independent each time.
   flicker design and why it replaced three independent timers, the
   anchoring/offset math, the trial state machine, and the threading/ISR
   model.
+- `docs/gui-usage.md` — user-facing: the three-screen flow (connect, mode,
+  session), what every button/marker/table column means, and the
+  always-visible settings line.
 - `PLAN.md` — kept up to date after every milestone with what was done and
-  why; also tracks what's explicitly *not* yet done (the GUI rewrite;
-  GUI/firmware integration).
+  why; also tracks what's explicitly *not* yet done (firmware/GUI
+  integration; participant/session management).
 
 ## Hardware status
 
@@ -204,10 +322,17 @@ real Teensy 4.0 + PCB hardware and confirmed working as designed.
 
 ## What hasn't been done yet
 
-- The GUI (`startingPoint/GUImetamers/`) hasn't been touched: it still
-  speaks the legacy `1789`/`6969` protocol, not `START`/`STOP`/`SET`/`MODE`/
-  `GET`. GUI refactor and firmware/GUI integration are separate, not-yet-
-  started milestones in `PLAN.md`.
+- The new GUI (`prototype/gui/`) has a working draft (connect, mode/
+  settings, live plot, results table/save, status line) verified only with
+  a fake serial link under `QT_QPA_PLATFORM=offscreen` — it has not yet
+  been run against the real Teensy. The legacy GUI
+  (`startingPoint/GUImetamers/`) is untouched and still speaks the legacy
+  `1789`/`6969` protocol.
+- Participant/session management and per-session auto-save (milestone 2.5)
+  are implemented (see section 6) but, like the rest of the GUI, verified
+  only under `QT_QPA_PLATFORM=offscreen`, not yet against the real Teensy.
+  Firmware/GUI integration testing (milestone 4) and the grid experiment
+  firmware (milestone 3) haven't started.
 - An improved variability *routine* was explicitly asked for and partially
   delivered (the anchored random walk); further refinements (e.g. different
   jump distributions) remain open-ended per `PLAN.md`.
