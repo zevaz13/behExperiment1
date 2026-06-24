@@ -445,16 +445,36 @@
         `GET`) and need updating to the combined firmware's
         `BEHAVIORAL*`/`GRID*`-prefixed commands regardless of unification.
 
-### 5.2 Implementation of combined GUI (not started)
-- [ ] Scaffold `prototype/combined_gui/` with `uv init --app`.
-- [ ] `serial_link.py` (copy), `protocol.py` (merge both, prefixed
-      `behavioral_`/`grid_`), `participants.py` (three-CSV scheme).
-- [ ] `main_window.py`: `ConnectPage`, `ParticipantPage` (master CSV),
-      `ExperimentSelectPage`, per-experiment `ModePage`, renamed
-      `BehavioralSessionPage`/`GridSessionPage`.
-- [ ] Verify end-to-end under `QT_QPA_PLATFORM=offscreen` with a fake
-      serial link (both experiment paths, Back-to-Experiment-select
-      re-entry, all three CSVs).
+### 5.2 Implementation of combined GUI (offscreen-verified)
+- [x] Scaffolded `prototype/combined_gui/` with `uv init --app`
+      (`pyside6`, `pyqtgraph`, `pyserial`, same as the other two GUIs).
+- [x] `serial_link.py` (copied verbatim), `protocol.py` (merged both:
+      `BehavioralSettings`/`GridSettings`, `BEHAVIORAL_SETTING_NAMES`/
+      `GRID_SETTING_NAMES`, `parse_behavioral_*`/`parse_grid_*`,
+      `build_set_command(prefix, values)`), `participants.py`
+      (three-CSV scheme: `participants_master.csv` + per-experiment
+      `participants_behavioral.csv`/`participants_grid.csv`,
+      `next_session_number(folder, sub_id, experiment)` numbered
+      independently per experiment).
+- [x] `main_window.py`: `ConnectPage` (confirms the firmware via
+      `BEHAVIORALGET`), `ParticipantPage` (reads the master CSV),
+      `ExperimentSelectPage` (new), `ModePage` parameterized by experiment
+      (one implementation for both `BEHAVIORALMODE`/`BEHAVIORALSET` and
+      `GRIDMODE`/`GRIDSET`), `BehavioralSessionPage` (current behavioral
+      session screen, talking `BEHAVIORALSTART`/`BEHAVIORALSTOP`) and
+      `GridSessionPage` (current grid session screen, unchanged
+      `GRIDSTART`/`GRIDSTOP`, now also records grid session metadata since
+      both experiments log metadata per the requirements doc). "Back"
+      returns to `ExperimentSelectPage`, not `ParticipantPage`.
+- [x] Verified end-to-end under `QT_QPA_PLATFORM=offscreen` with a fake
+      serial link: Connect -> Participant -> Experiment select -> Mode ->
+      Session for both Behavioral and Grid, Default mode, correct
+      `BEHAVIORAL*`/`GRID*` commands sent at each step, Back-to-Experiment-
+      select re-entry, all three CSVs written with correct rows, behavioral
+      data file (`S1_R1.txt`) written and a second behavioral session
+      numbered `S1_R2.txt` independently of the grid session's own
+      numbering. Not yet run against real hardware (needs native Windows
+      per the GUI stack's existing constraint) or the Advanced-mode path.
 - [ ] Flash/run against real Teensy 4.0 + PCB hardware on native Windows.
 
 ### 6. Firmware + GUI integration (not started)

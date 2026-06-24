@@ -1,0 +1,10 @@
+[project]
+name = "combined-gui"
+version = "0.1.0"
+description = "Combined GUI for the behavioral and grid experiments."
+requires-python = ">=3.12"
+dependencies = [
+    "pyqtgraph>=0.14.0",
+    "pyserial>=3.5",
+    "pyside6>=6.11.1",
+]
