@@ -416,13 +416,48 @@
       still point at the old per-experiment firmware/protocol) will need to
       pick up in milestone 5.
       Wrote `docs/experimentStimControl-configure.md`.
-- [ ] Flash and verify on real Teensy 4.0 + PCB hardware: both experiments
+- [x] Flash and verify on real Teensy 4.0 + PCB hardware: both experiments
       individually, and the mutual-exclusion rejection in both directions.
-      Not yet built/flashed — no Arduino toolchain available in this
-      (WSL2/Linux) environment; reviewed manually for symbol/include
-      consistency only.
+      Compiled, flashed, and manually tested by the user — all commands
+      work as expected.
  
-### 5. Firmware + GUI integration (not started)
+### 5. Unified GUI for Behavioral and Grid experiments
+
+### 5.1 List of requirements for combined GUI
+- [x] Wrote `docs/combined-gui-requirements.md`. Decisions made with the
+      user:
+      - Flow: Connect -> Participant -> Experiment select
+        (Behavioral/Grid) -> Mode (Default/Advanced, scoped to that
+        experiment) -> Session. "Back" returns to Experiment select, not
+        Participant, so one participant can run both without re-entry.
+      - Metadata: three CSVs per save folder —
+        `participants_behavioral.csv` and `participants_grid.csv` (current
+        per-experiment shape each), plus `participants_master.csv` (one row
+        per session across either experiment: `sub_id, group, experiment,
+        session, datetime`), which is what the Participant screen reads to
+        list existing participants regardless of which experiment they did
+        before.
+      - New self-contained `prototype/combined_gui/` app (own `uv`
+        project), built from the existing `prototype/gui/`/
+        `prototype/grid_gui/` modules; both kept untouched as reference.
+      - Noted that both existing GUIs still speak the old bare
+        `START`/`STOP`/`MODE`/`SET`/`GET` (and grid's old `MODE`/`SET`/
+        `GET`) and need updating to the combined firmware's
+        `BEHAVIORAL*`/`GRID*`-prefixed commands regardless of unification.
+
+### 5.2 Implementation of combined GUI (not started)
+- [ ] Scaffold `prototype/combined_gui/` with `uv init --app`.
+- [ ] `serial_link.py` (copy), `protocol.py` (merge both, prefixed
+      `behavioral_`/`grid_`), `participants.py` (three-CSV scheme).
+- [ ] `main_window.py`: `ConnectPage`, `ParticipantPage` (master CSV),
+      `ExperimentSelectPage`, per-experiment `ModePage`, renamed
+      `BehavioralSessionPage`/`GridSessionPage`.
+- [ ] Verify end-to-end under `QT_QPA_PLATFORM=offscreen` with a fake
+      serial link (both experiment paths, Back-to-Experiment-select
+      re-entry, all three CSVs).
+- [ ] Flash/run against real Teensy 4.0 + PCB hardware on native Windows.
+
+### 6. Firmware + GUI integration (not started)
 - [ ] End-to-end test of new firmware against new/updated GUI.
 
 ## Known gaps surfaced during cleanup

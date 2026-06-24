@@ -15,23 +15,23 @@ You are a seasoned software-Firmware engineer with experiment in experimental de
     - Be able to Record participant information and save Experimental data
     - Overal must be an user Friendy experience.
 - Integration of Firmware and Software for behavioral data [DONE]
-- To modify the grid experiment firmware: 
+- To modify the grid experiment firmware [Done]: 
     - A new version of the firmware for this test should be created. It must remove all the mentions to different experiments.
     - The new version should be modular, like the behavioral one above.
     - Commands to start and stop the grid should be improved, consider them being different to the behavioral one.
     - Experimental parameters should be configurable without reprogramming the board, these include the flickering frequency, the yellow Value, the number of baselines at the beginning, number of baselines at end, min Red, min Green, max Red, max Green, trial length, and intertrial wait. 
-- Create a GUI for the grid experiment. Requirements to be defined.
-- Combine firmware from Behavioral and grid experiemnts.
+- Create a GUI for the grid experiment. [Done].
+- Combine firmware from Behavioral and grid experiemnts [Done].
 - Combine the GUI for behavioral and grid experiemnts. 
 ## Experimental Task informaiton
 @startingPoint/experiment.md
 
 ## Technical requirements
-- We use Teensy 4.0 and programme it using Arduino IDE, If there is something easier to work on, please tell.
+- We use Teensy 4.0 and programme it using Arduino IDE, I do manual flashes and testing.
 - We will create new directories for the new versions of the project these should exist in prototype/
-- If we decide to use python at a certain point, we must use "uv" as package manager. ONLY UV.
-- The GUI refactor is in progress in `prototype/gui/`: Python (PySide6 + pyqtgraph + pyserial, managed by `uv`). The legacy C# WinForms GUI in `startingPoint/GUImetamers/` is kept as reference only, untouched.
-- The new GUI must run on native Windows, not WSL — the Teensy enumerates as a COM port that WSL2 can't see without extra passthrough setup. If developing/testing from WSL or Linux, set `UV_PROJECT_ENVIRONMENT=.venv-linux` there so the venv doesn't collide with the Windows one (see README.md).
+- We must use "uv" as package manager. ONLY UV.
+- The GUI refactors are in `prototype/`: Python (PySide6 + pyqtgraph + pyserial, managed by `uv`). The legacy C# WinForms GUI in `startingPoint/GUImetamers/` is kept as reference only, untouched.
+- The new GUIs must run on native Windows, not WSL — the Teensy enumerates as a COM port that WSL2 can't see without extra passthrough setup. If developing/testing from WSL or Linux, set `UV_PROJECT_ENVIRONMENT=.venv-linux` there so the venv doesn't collide with the Windows one (see README.md).
 - Always keep a document called PLAN.md where we can communicate about the current plan of action. Write the current milestones to it, and checklists toward that.
 
 ## Coding standards
