@@ -1,40 +1,85 @@
 # Prototype 2 Development Summary
 
-## Session: 2026-06-29
+## M1 — subjectExperiment Firmware (hardware-verified, complete)
 
-### M1 — subjectExperiment Firmware (complete)
+**Session:** 2026-06-29  
+**Output:** `prototype2/Firmware/subjectExperiment/`  
+**Status:** Built, flashed, and hardware-tested on Teensy 4.0. All 19 test scenarios in `testingM1.md` pass.
 
-**Output:** `prototype2/Firmware/subjectExperiment/`
+---
 
-Created unified firmware for behavioral and grid experiments targeting the new 5-LED PCB (Teensy 4.0). Modelled on the prototype1 combined firmware pattern.
+### Hardware context
 
-#### Files created
+New PCB supports five independent LED channels simultaneously. Key difference from prototype1: separate Blue and Cyan channels, Amber is always the primary reference LED.
+
+| Signal | Pin | Role |
+|--------|-----|------|
+| AMBER | 0 | Primary reference (always reference LED) |
+| RED | 1 | Primary stimulus (RG pair) |
+| BLUE | 2 | Primary stimulus (BG pair) |
+| GREEN | 3 | Secondary stimulus (both pairs) |
+| CYAN | 4 | Secondary reference (BG pair only) |
+| TRIGGER | 6 | EEG trigger output |
+| BUTTON | 12 | Participant response button |
+| AIred | 20 | Knob 1 — primary channel (Red or Blue) |
+| AIgreen | 21 | Knob 2 — secondary channel (Green) |
+
+PWM: 12-bit (0–4095). Baud: 38400.
+
+---
+
+### Files
 
 | File | Description |
-|---|---|
-| `pinDefs.h` | Pin constants (AMBER=0, RED=1, BLUE=2, GREEN=3, CYAN=4, TRIGGER=6, BUTTON=12, AIred=20, AIgreen=21), NUM_STEPS=10 |
-| `globals.h/.cpp` | All shared state, configurable parameters, `applyDefaultsRG/BG()`, `updateHalfPeriod()` |
-| `ledControl.h/.cpp` | Single `flickerISR` (Phase A: stimulus on / Phase B: reference on), `timerSerial` fires `serialFrameOutput` every 100 ms |
-| `behavioralExperiment.h/.cpp` | Knob-driven trial loop, Bounce button debounce, randomized start offset, button-press response logging |
-| `gridExperiment.h/.cpp` | Linspaced stimulus arrays, 4-order diagonal traversal, start/end baselines (solid reference), EEG trigger per trial |
-| `subjectExperiment.ino` | `setup`/`loop`, `experimentThread` (TeensyThreads), `key=value` serial config parser |
-| `testingM1.md` | 13 test scenarios covering all 4 modes, every config parameter, order variants, and edge cases |
+|------|-------------|
+| `pinDefs.h` | All pin constants and `NUM_STEPS=10`, `NUM_STIMS=100` |
+| `globals.h/.cpp` | All shared state and configurable parameters; `applyDefaultsRG/BG()`, `updateHalfPeriod()` |
+| `ledControl.h/.cpp` | `flickerISR` (Phase A: stimulus on / Phase B: reference on); `timerSerial` fires `serialFrameOutput` every 100 ms |
+| `behavioralExperiment.h/.cpp` | Knob-anchored trial loop, Bounce button debounce, walk-from-press intertrial strategy |
+| `gridExperiment.h/.cpp` | Linspaced stimulus arrays, diagonal traversal (4 orders), solid baselines (101+), 1-based stimulus trial count |
+| `subjectExperiment.ino` | `setup`/`loop`, `experimentThread` (TeensyThreads), `key=value` and batch config parser |
+| `testingM1.md` | 19 test scenarios — all modes, parameters, trial numbering, batch config, anchoring, default-start commands |
 
-#### Architecture decisions
+---
 
-- **Single flicker ISR** — one `IntervalTimer` toggles directly between Phase A (stimulus LEDs) and Phase B (reference LEDs) each half-period. No dark gap between phases. This is cleaner than the two-independent-timer approach in earlier reference firmwares.
-- **`timerSerial`** starts in `setup()` and fires `serialFrameOutput` every 100 ms; returns immediately when `!started`.
-- **`experimentThread`** (TeensyThreads) idles via `threads.yield()` when not running, then dispatches to `runBehavioralExperiment()` or `runGridExperiment()` based on `expMode`.
-- **Config commands** (`key=value`) accepted at any time; mode/start commands (`beh-rg`, `beh-bg`, `grid-rg`, `grid-bg`) apply defaults for the selected pair, then start. User config overrides must be sent after the mode command if defaults need changing.
-- **Randomized start** in behavioral mode: ADC mapping offset of ±(max−min)/5 per channel so trials never begin at an extreme value.
-- **Diagonal grid traversal**: 4 orders implemented by flipping A and/or B index axes on the base (0,0)→diagonal sequence.
+### Architecture decisions
 
-#### Serial interface
+**Single flicker ISR** — one `IntervalTimer` toggles between Phase A (stimulus LEDs on, reference off) and Phase B (reference LEDs on, stimulus off) each half-period. No dark gap. The ISR reads `currentRed/Blue/Green/Amber/Cyan` globals written by the experiment thread.
 
-Start commands: `beh-rg`, `beh-bg`, `grid-rg`, `grid-bg`
-Stop command: `stop`
+**`timerSerial`** — second `IntervalTimer` fires `serialFrameOutput` every 100 ms unconditionally; returns immediately when `!started`. This means the serial frame reflects the true live state at all times.
 
-Config commands (examples):
+**`experimentThread`** (TeensyThreads) — idles via `threads.yield()` when not running. On start, dispatches to `runBehavioralExperiment()` or `runGridExperiment()` based on `expMode`.
+
+**Behavioral intertrial strategy** (matches prototype1 `knobs.cpp`):
+- First trial anchors to interior margin: `minA + (maxA−minA)/5`, so the start is never at an extreme.
+- ADC offset computed in raw ADC space (`rawFromMapped` inverse of `map()`), so the current physical knob position maps to the target value — the knob feels continuous, no snap.
+- After button press: record press values, log response, stop flicker, wait `interTrialWait` ms.
+- Next trial target = previous press ± `walkJump(range/5)`, clamped to interior margin, then re-anchor.
+
+**Baseline trials (grid)** — solid reference LEDs via direct `analogWrite()` for `trialLength` ms, then off during ITI. No flicker timer running during baselines. Numbered 101+: start baselines are 101, 102, …; end baselines continue from `101 + nBaselinesStart`.
+
+**Grid trial numbering** — stimulus trials are 1-based (1 through `NUM_STIMS`). Baseline trials are 101+. This makes it unambiguous in the serial stream whether a frame is a baseline or stimulus trial.
+
+---
+
+### Serial interface (complete command set)
+
+**Start commands** (set mode, reset counters, start immediately):
+```
+beh-rg          beh-bg          grid-rg         grid-bg
+```
+
+**Default-start commands** (apply defaults for that color pair, then start):
+```
+beh-rg-default  beh-bg-default  grid-rg-default  grid-bg-default
+```
+
+**Utility:**
+```
+stop            get             defaults-rg     defaults-bg
+```
+
+**Config** (accepted any time, including while running):
 ```
 freq=10          refAmber=2400    refCyan=0
 maxA=3200        minA=0           maxB=2000        minB=0
@@ -42,11 +87,57 @@ nBaselinesStart=2  nBaselinesEnd=2  trialLength=3000  interTrialWait=750
 order=1
 ```
 
-Serial output frame (all modes):
+**Batch config** (semicolon-separated, all applied atomically):
+```
+freq=10;maxA=3200;minA=0;refAmber=2400
+```
+
+---
+
+### Serial output frame (all modes, 100 ms interval)
+
 ```
 &@STIM:{trCnt},Mode:{RG|BG},RED:{v},GREEN:{v},BLUE:{v},AMBER:{v},CYAN:{v},TRIG:{0|1}%!
 ```
 
-#### Plan update
+Unused channels output as 0. `trCnt` is 101+ for baselines, 1-based for grid stimulus trials, 1-based increments for behavioral.
 
-PLAN.md M1 checklist fully marked complete. M2 (subjectExperiment GUI) is the next milestone.
+**Behavioral response line** (logged on each button press):
+```
+RESP,Trial:{n},A:{primary_LED_value},B:{green_LED_value}
+```
+
+---
+
+### Defaults
+
+| Parameter | RG default | BG default |
+|-----------|-----------|-----------|
+| freq | 10 Hz | 10 Hz |
+| refAmber | 2400 | 500 |
+| refCyan | 0 | 1400 |
+| maxA (Red/Blue) | 3200 | 2800 |
+| minA | 0 | 0 |
+| maxB (Green) | 2000 | 2000 |
+| minB | 0 | 0 |
+| nBaselinesStart | 2 | 2 |
+| nBaselinesEnd | 2 | 2 |
+| trialLength | 3000 ms | 3000 ms |
+| interTrialWait | 750 ms | 750 ms |
+
+---
+
+### Next milestone
+
+**M2 — subjectExperiment GUI** (`prototype2/GUI/subjectExperiment/`)
+
+PySide6 + pyqtgraph + pyserial, uv-managed. Targets native Windows (Teensy COM port). Mirrors the prototype1 combined GUI pattern with:
+- Port selection and serial connect/disconnect
+- Participant management (create/select, session number)
+- Mode selector (Behavioral vs Grid, RG vs BG) with matching color theme
+- Configuration panel for all firmware parameters (with send-to-device and read-from-device)
+- Real-time plot of LED values + trigger events
+- Data logging to CSV
+- Start/Stop controls
+
+Reference implementation: `prototype/combined_gui/` (read-only).
