@@ -9,7 +9,7 @@
 - [x] Trial counts for the experiment part start at 1 (grid stimulus trials 1–100).
 - [x] Multiple parameters settable at once via semicolon-separated commands: `freq=10;maxA=3200;minA=0`.
 - [x] Behavioral intertrial strategy: knob anchoring (ADC-space offset so physical knob maps to target), walk from previous press position by ±range/5, first trial at interior margin.
-- [ ] Add new commands beh-rg-default, beh-bg-default, grid-rg-default, and grid-bg-default that should start the experiment with the default parameters. 
+- [x] Add new commands beh-rg-default, beh-bg-default, grid-rg-default, and grid-bg-default that should start the experiment with the default parameters. 
 #### File scaffold
 - [x] `pinDefs.h` — AMBER=0, RED=1, BLUE=2, GREEN=3, CYAN=4, TRIGGER=6, BUTTON=12, AI_RED=20, AI_GREEN=21; 12-bit PWM; baud 38400
 - [x] `globals.h/.cpp` — all shared state: mode (RG/BG), colorPair, freq, refAmber, refCyan, minA, maxA, minB, maxB, nBaselinesStart, nBaselinesEnd, trialLength, interTrialWait, currentRed/Green/Blue/Amber/Cyan, trialCount, trigFlag

@@ -320,3 +320,36 @@ Observe across several trials:
 ```
 stop
 ```
+
+---
+
+## 19. Default-start commands — apply defaults and start in one step
+
+Change some parameters, then use a default-start command and confirm they reset:
+
+```
+freq=5
+maxA=1000
+beh-rg-default
+get
+```
+
+Expected: `START beh-rg (defaults)`, then `get` shows `freq=10`, `maxA=3200` (RG defaults restored).
+
+```
+stop
+beh-bg-default
+```
+Expected: `START beh-bg (defaults)`, BG defaults active (refAmber=500, refCyan=1400, maxA=2800).
+
+```
+stop
+grid-rg-default
+```
+Expected: `START grid-rg (defaults)`, runs grid with RG defaults.
+
+```
+stop
+grid-bg-default
+```
+Expected: `START grid-bg (defaults)`, runs grid with BG defaults.

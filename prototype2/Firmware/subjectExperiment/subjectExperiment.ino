@@ -156,6 +156,26 @@ void loop() {
         colorPair = PAIR_BG; expMode = EXP_GRID;
         started = true;
         Serial.println("START grid-bg");
+    } else if (cmd.equalsIgnoreCase("beh-rg-default")) {
+        applyDefaultsRG();
+        colorPair = PAIR_RG; expMode = EXP_BEHAVIORAL;
+        started = true;
+        Serial.println("START beh-rg (defaults)");
+    } else if (cmd.equalsIgnoreCase("beh-bg-default")) {
+        applyDefaultsBG();
+        colorPair = PAIR_BG; expMode = EXP_BEHAVIORAL;
+        started = true;
+        Serial.println("START beh-bg (defaults)");
+    } else if (cmd.equalsIgnoreCase("grid-rg-default")) {
+        applyDefaultsRG();
+        colorPair = PAIR_RG; expMode = EXP_GRID;
+        started = true;
+        Serial.println("START grid-rg (defaults)");
+    } else if (cmd.equalsIgnoreCase("grid-bg-default")) {
+        applyDefaultsBG();
+        colorPair = PAIR_BG; expMode = EXP_GRID;
+        started = true;
+        Serial.println("START grid-bg (defaults)");
     } else {
         Serial.print("ERR unknown: ");
         Serial.println(cmd);
