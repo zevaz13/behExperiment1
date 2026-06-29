@@ -4,6 +4,8 @@
 
 ### M1 — subjectExperiment Firmware
 **Output:** `prototype2/Firmware/subjectExperiment/`
+#### Other 
+- [x] Walk jump increased to fixed range/3 magnitude (random sign). Previous: uniform random in ±range/5. Now: exactly ±range/3 each trial — guaranteed 33% move, more challenging.
 #### Issues (fixed)
 - [x] Baselines are solid LEDs: no flicker during baseline. Amber (RG) or Amber+Cyan (BG) set solid for trialLength, then turned off. Baselines numbered 101+ (start baselines 101,102; end baselines continue from 103,104).
 - [x] Trial counts for the experiment part start at 1 (grid stimulus trials 1–100).

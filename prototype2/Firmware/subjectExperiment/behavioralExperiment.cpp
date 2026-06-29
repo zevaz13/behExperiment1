@@ -20,11 +20,11 @@ static int wrapAdc(int v) {
     return v < 0 ? v + 4096 : v;
 }
 
-// Uniform random jump in [-(range/5), +(range/5)].
+// Fixed jump of range/3 with random sign — guarantees a meaningful move each trial.
 static int walkJump(int lo, int hi) {
-    int mag = (hi - lo) / 5;
+    int mag = (hi - lo) / 3;
     if (mag <= 0) return 0;
-    return (int)random(-mag, mag + 1);
+    return (random(0, 2) == 0) ? mag : -mag;
 }
 
 // Run continuously until started = false (set by serial "stop" command).
