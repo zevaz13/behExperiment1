@@ -1,29 +1,4 @@
 # Requirements for Rapid Experimental Prototyping
-## Deliverable 2 — subjectExperiment GUI
-
-**Output path:** `prototype2/GUI/subjectExperiment/`
-
-Python GUI that controls the subjectExperiment Firmware via serial. Style reference:
-`prototype/combined_gui/`.
-
-Stack: PySide6 + pyqtgraph + pyserial, managed by `uv`.
-Must run on native Windows (COM port enumeration). Linux/WSL development uses
-`UV_PROJECT_ENVIRONMENT=.venv-linux`.
-
-### Features
-
-- Port selection and connection management.
-- Participant management: create new participant, select existing, record session number.
-- Data logging: save experimental data to file (CSV or similar), keyed by participant/session.
-- Real-time plot of serial data (LED values, trigger).
-- Mode selector: Behavioral vs Grid, Red-Green vs Blue-Green.
-- Color scheme adapts to selected modality (Red-Green theme vs Blue-Green theme).
-- Serial configuration panel: expose all configurable firmware parameters (freq, ref values,
-  baselines, trial timing) and send them to the board.
-- Start/Stop experiment controls.
-
----
-
 ## Deliverable 3 — Configurable Firmware (rapid experimental prototyping)
 
 **Output path:** `prototype2/Firmware/configurableFirmware/`
