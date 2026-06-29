@@ -1,3 +1,6 @@
+# Starting point reference code (read-only, not tracked)
+startingPoint/
+
 # .NET / C# (GUI)
 bin/
 obj/
