@@ -15,15 +15,26 @@ static void buildArrays() {
     }
 }
 
-// Diagonal coordinates: sum of indices walks 0..2*(NUM_STEPS-1)
+// Anti-diagonal (boustrophedon) traversal: each diagonal sum s = i + j is walked
+// in alternating direction so consecutive stimuli stay adjacent (serpentine),
+// rather than jumping back across the grid each diagonal. Matches prototype1
+// gridEEG/sequence.cpp buildDiagonalOrder (even s -> i descending, odd s -> i
+// ascending, using s = (x-1)+(y-1) = d-2 so parity follows prototype1's d).
 static void buildDiagonalCoords() {
     int idx = 0;
     for (int s = 0; s <= 2 * (NUM_STEPS - 1); s++) {
-        for (int i = 0; i < NUM_STEPS; i++) {
-            int j = s - i;
-            if (j >= 0 && j < NUM_STEPS) {
+        int iLo = max(0, s - (NUM_STEPS - 1));
+        int iHi = min(s, NUM_STEPS - 1);
+        if (s % 2 == 0) {
+            for (int i = iHi; i >= iLo; i--) {
                 tempCoords[idx][0] = i;
-                tempCoords[idx][1] = j;
+                tempCoords[idx][1] = s - i;
+                idx++;
+            }
+        } else {
+            for (int i = iLo; i <= iHi; i++) {
+                tempCoords[idx][0] = i;
+                tempCoords[idx][1] = s - i;
                 idx++;
             }
         }

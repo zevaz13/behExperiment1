@@ -7,6 +7,7 @@ so the same participant can run multiple experiments without re-entering info.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from statistics import median
 
@@ -56,6 +57,9 @@ AUTO_DETECT_ATTEMPTS_BEFORE_FALLBACK = 6
 
 GRID_STEPS = 10
 GRID_STIMS = GRID_STEPS * GRID_STEPS
+
+# Subject IDs become filename stems, so restrict them to filesystem-safe chars.
+_SUB_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 _PALETTE = {
     "rg": {
@@ -283,16 +287,44 @@ class ConnectPage(QWidget):
         self._get_buffer.append(line)
         settings = parse_get_response(self._get_buffer)
         if settings is not None and self._link is not None:
-            self._link.line_received.disconnect(self._on_line)
+            link = self._link
+            link.line_received.disconnect(self._on_line)
+            try:
+                link.connection_lost.disconnect(self._on_connection_lost)
+            except (RuntimeError, TypeError):
+                pass
             self._get_buffer.clear()
-            self.connected.emit(self._link)
+            self._link = None  # ownership transferred to MainWindow
+            self.connected.emit(link)
 
     def _on_connection_lost(self, message: str) -> None:
+        if self._link is not None:
+            try:
+                self._link.line_received.disconnect(self._on_line)
+            except (RuntimeError, TypeError):
+                pass
+            self._link.close()
         self._status_label.setText(f"Connection lost: {message}")
         self._link = None
         self._attempts = 0
         self._get_buffer.clear()
         self._timer.start(AUTO_DETECT_RETRY_MS)
+
+    def restart(self) -> None:
+        """Reset to a fresh search (used after a mid-session disconnect)."""
+        self._link = None
+        self._attempts = 0
+        self._get_buffer.clear()
+        self._status_label.setText("Searching for Teensy...")
+        self._port_combo.setVisible(False)
+        self._connect_button.setVisible(False)
+        self._timer.start(AUTO_DETECT_RETRY_MS)
+
+    def close_link(self) -> None:
+        """Close a link still owned by this page (not yet handed off)."""
+        if self._link is not None:
+            self._link.close()
+            self._link = None
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +421,11 @@ class ParticipantPage(QWidget):
             sub_id = self._sub_id_edit.text().strip()
             if not sub_id:
                 self._error_label.setText("Enter a subject ID.")
+                return
+            if not _SUB_ID_RE.match(sub_id):
+                self._error_label.setText(
+                    "Subject ID may only contain letters, digits, hyphen, and underscore."
+                )
                 return
             existing_ids = {
                 self._existing_combo.itemData(i)[0]
@@ -639,12 +676,23 @@ class BehavioralSessionPage(QWidget):
         self._sub_id = sub_id
         self._group = group
 
+    def _attach(self, link: SerialLink) -> None:
+        """Connect to the shared link, replacing any previous connection."""
+        self.detach()
+        self._link = link
+        self._link.line_received.connect(self._on_line)
+
+    def detach(self) -> None:
+        """Disconnect from the link so a hidden page stops processing frames."""
+        if self._link is not None:
+            try:
+                self._link.line_received.disconnect(self._on_line)
+            except (RuntimeError, TypeError):
+                pass
+            self._link = None
+
     def start_session(self, link: SerialLink, mode_str: str, settings: dict, palette: dict) -> None:
-        if self._link is None:
-            self._link = link
-            self._link.line_received.connect(self._on_line)
-        else:
-            self._link = link
+        self._attach(link)
 
         self._mode_str = mode_str
         self._settings = settings
@@ -769,7 +817,13 @@ class BehavioralSessionPage(QWidget):
 # ---------------------------------------------------------------------------
 
 class GridSessionPage(QWidget):
-    """10x10 stimulus grid, progress bar, and EEG trigger indicator."""
+    """10x10 stimulus grid, progress bar, and EEG trigger indicator.
+
+    Grid runs are EEG experiments: per-trial data is captured by the EEG
+    acquisition system, time-locked via the hardware TRIG line. The GUI
+    therefore logs only the session config (participants_grid.csv), not a
+    per-trial data file like the behavioral page.
+    """
 
     back_requested = Signal()
 
@@ -792,7 +846,7 @@ class GridSessionPage(QWidget):
         self._current: tuple[int, int] | None = None
         self._total_trials = 0
         self._completed = 0
-        self._last_trig = 0
+        self._last_stim: int | None = None
 
         self._params_label = QLabel("")
         self._params_label.setWordWrap(True)
@@ -842,18 +896,28 @@ class GridSessionPage(QWidget):
         self._sub_id = sub_id
         self._group = group
 
+    def _attach(self, link: SerialLink) -> None:
+        """Connect to the shared link, replacing any previous connection."""
+        self.detach()
+        self._link = link
+        self._link.line_received.connect(self._on_line)
+
+    def detach(self) -> None:
+        """Disconnect from the link so a hidden page stops processing frames."""
+        if self._link is not None:
+            try:
+                self._link.line_received.disconnect(self._on_line)
+            except (RuntimeError, TypeError):
+                pass
+            self._link = None
+
     def start_session(self, link: SerialLink, mode_str: str, settings: dict, palette: dict) -> None:
-        if self._link is None:
-            self._link = link
-            self._link.line_received.connect(self._on_line)
-        else:
-            self._link = link
+        self._attach(link)
 
         self._mode_str = mode_str
         self._settings = settings
         self._palette = palette
         self._running = False
-        self._last_trig = 0
 
         self._plot.setLabel("bottom", f"{palette['label_a']} LED (A/D)")
         self._plot.setLabel("left", f"{palette['label_b']} LED (A/D)")
@@ -877,6 +941,7 @@ class GridSessionPage(QWidget):
         self._visited = set()
         self._current = None
         self._completed = 0
+        self._last_stim = None
         self._total_trials = n_start + GRID_STIMS + n_end
 
         self._progress.setRange(0, self._total_trials)
@@ -909,7 +974,6 @@ class GridSessionPage(QWidget):
         self._setup_grid(self._settings)
         self._send(self._mode_str)
         self._running = True
-        self._last_trig = 0
         self._status_label.setText("Running...")
         self._update_buttons()
 
@@ -952,7 +1016,7 @@ class GridSessionPage(QWidget):
         if line == "DONE":
             self._completed = self._total_trials
             self._progress.setValue(self._total_trials)
-            self._current = None
+            self._current = None  # presented cells already marked visited
             self._refresh_scatter()
             self._running = False
             self._status_label.setText("Done")
@@ -965,38 +1029,40 @@ class GridSessionPage(QWidget):
             return
 
         frame = parse_stream_frame(line)
-        if frame is None:
+        if frame is None or not self._running:
             return
 
-        trig = frame["TRIG"]
         stim = frame["STIM"]
+        trig = frame["TRIG"]
         mode = frame["Mode"]
-
-        # Trigger indicator.
         self._set_trig(trig)
 
-        # TRIG falling edge: trial just ended, increment progress.
-        if trig == 0 and self._last_trig == 1:
-            if self._current is not None:
-                self._visited.add(self._current)
-            self._current = None
-            self._completed = min(self._completed + 1, self._total_trials)
-            self._progress.setValue(self._completed)
-            self._refresh_scatter()
+        # Each trial holds a unique STIM value (stimuli 1..100, baselines 101+),
+        # so a change of STIM means the previous trial finished and a new one
+        # began. Counting trials this way is robust to the 100 ms sampling rate,
+        # unlike watching for a TRIG edge that a short ITI could fall between.
+        if stim != self._last_stim:
+            if self._last_stim is not None:
+                self._completed = min(self._completed + 1, self._total_trials)
+                self._progress.setValue(self._completed)
+            self._last_stim = stim
 
-        # Current stimulus position.
+        # Position and marking only from active-presentation frames (TRIG=1).
+        # During the inter-trial wait the firmware zeroes the LEDs while keeping
+        # STIM, so reading position then would drag the marker to cell (0, 0) and
+        # leave the real stimulus cell unmarked. Stimulus cells stay marked once
+        # presented; the current one is highlighted on top.
         if trig == 1 and stim <= GRID_STIMS:
             primary = frame["RED"] if mode == "RG" else frame["BLUE"]
-            ai = _nearest_index(self._a_levels, primary)
-            bi = _nearest_index(self._b_levels, frame["GREEN"])
-            if (ai, bi) != self._current:
-                self._current = (ai, bi)
+            cell = (_nearest_index(self._a_levels, primary),
+                    _nearest_index(self._b_levels, frame["GREEN"]))
+            if cell != self._current:
+                self._current = cell
+                self._visited.add(cell)
                 self._refresh_scatter()
             self._status_label.setText(f"Stimulus {stim} / {GRID_STIMS}")
-        elif trig == 1 and stim > GRID_STIMS:
+        elif trig == 1:
             self._status_label.setText("Baseline trial")
-
-        self._last_trig = trig
 
 
 # ---------------------------------------------------------------------------
@@ -1028,12 +1094,14 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self._stack)
 
         self._link: SerialLink | None = None
+        self._active_session_page: QWidget | None = None
         self._folder: Path | None = None
         self._sub_id = ""
         self._group = ""
         self._active_mode = ""
         self._active_palette: dict = {}
         self._get_buffer: list[str] = []
+        self._awaiting_get = False
 
         self._settings_label = QLabel("Not connected")
         self.statusBar().addPermanentWidget(self._settings_label, 1)
@@ -1053,6 +1121,7 @@ class MainWindow(QMainWindow):
 
     def _on_connected(self, link: SerialLink) -> None:
         self._link = link
+        self._link.connection_lost.connect(self._on_connection_lost)
         self._settings_label.setText("Connected")
         self._stack.setCurrentWidget(self._participant_page)
 
@@ -1066,6 +1135,7 @@ class MainWindow(QMainWindow):
         """User clicked Continue on ExperimentSelect; query firmware settings."""
         self._active_mode = mode_str
         self._get_buffer.clear()
+        self._awaiting_get = True
         self._link.line_received.connect(self._on_get_response)
         self._link.send("get")
 
@@ -1075,6 +1145,7 @@ class MainWindow(QMainWindow):
         if settings is None:
             return
         self._link.line_received.disconnect(self._on_get_response)
+        self._awaiting_get = False
         self._get_buffer.clear()
         self._mode_config_page.setup(self._link, self._active_mode, settings)
         self._settings_label.setText(_format_settings(self._active_mode, settings))
@@ -1089,17 +1160,52 @@ class MainWindow(QMainWindow):
         palette = _PALETTE[_color_pair(mode_str)]
         self._active_palette = palette
 
-        if _exp_type(mode_str) == "behavioral":
-            self._behavioral_session_page.set_participant(self._folder, self._sub_id, self._group)
-            self._behavioral_session_page.start_session(self._link, mode_str, settings, palette)
-            self._stack.setCurrentWidget(self._behavioral_session_page)
-        else:
-            self._grid_session_page.set_participant(self._folder, self._sub_id, self._group)
-            self._grid_session_page.start_session(self._link, mode_str, settings, palette)
-            self._stack.setCurrentWidget(self._grid_session_page)
+        page = (
+            self._behavioral_session_page
+            if _exp_type(mode_str) == "behavioral"
+            else self._grid_session_page
+        )
+        page.set_participant(self._folder, self._sub_id, self._group)
+        page.start_session(self._link, mode_str, settings, palette)
+        self._active_session_page = page
+        self._stack.setCurrentWidget(page)
 
     def _on_back_requested(self) -> None:
+        # Detach the session page so it stops consuming the shared serial stream.
+        if self._active_session_page is not None:
+            self._active_session_page.detach()
+            self._active_session_page = None
         self._stack.setCurrentWidget(self._experiment_select_page)
+
+    # --- Connection lifecycle ------------------------------------------------
+
+    def _on_connection_lost(self, message: str) -> None:
+        """Teensy unplugged or port died: tear down and return to the Connect page."""
+        self._teardown_link()
+        self._settings_label.setText(f"Connection lost: {message}")
+        self._connect_page.restart()
+        self._stack.setCurrentWidget(self._connect_page)
+
+    def _teardown_link(self) -> None:
+        """Detach the active session, disconnect signals, and close the link."""
+        if self._active_session_page is not None:
+            self._active_session_page.detach()
+            self._active_session_page = None
+        link = self._link
+        self._link = None
+        self._get_buffer.clear()
+        if link is None:
+            return
+        link.connection_lost.disconnect(self._on_connection_lost)
+        if self._awaiting_get:
+            link.line_received.disconnect(self._on_get_response)
+            self._awaiting_get = False
+        link.close()
+
+    def closeEvent(self, event) -> None:
+        self._teardown_link()
+        self._connect_page.close_link()
+        super().closeEvent(event)
 
     # --- Color theming -------------------------------------------------------
 

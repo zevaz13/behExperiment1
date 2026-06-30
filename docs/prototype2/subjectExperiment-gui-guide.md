@@ -182,6 +182,11 @@ maxA, minA, maxB, minB, nBaselinesStart, nBaselinesEnd,
 trialLength, interTrialWait, order
 ```
 
+Grid runs are EEG experiments, so per-trial data is recorded by the EEG
+acquisition system (time-locked via the hardware TRIG line), not by the GUI.
+The GUI intentionally logs only this session config for grid mode; there is no
+per-trial `.txt` file as there is for behavioral sessions.
+
 ### {sub_id}_R{n}.txt (behavioral only)
 
 Space-separated text file, one row per button press, appended in real time.

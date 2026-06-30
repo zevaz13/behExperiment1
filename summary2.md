@@ -36,7 +36,7 @@ PWM: 12-bit (0–4095). Baud: 38400.
 | `globals.h/.cpp` | All shared state and configurable parameters; `applyDefaultsRG/BG()`, `updateHalfPeriod()` |
 | `ledControl.h/.cpp` | `flickerISR` (Phase A: stimulus on / Phase B: reference on); `timerSerial` fires `serialFrameOutput` every 100 ms |
 | `behavioralExperiment.h/.cpp` | Knob-anchored trial loop, Bounce button debounce, walk-from-press intertrial strategy |
-| `gridExperiment.h/.cpp` | Linspaced stimulus arrays, diagonal traversal (4 orders), solid baselines (101+), 1-based stimulus trial count |
+| `gridExperiment.h/.cpp` | Linspaced stimulus arrays, boustrophedon diagonal traversal (4 orders, see M2.9), solid baselines (101+), 1-based stimulus trial count |
 | `subjectExperiment.ino` | `setup`/`loop`, `experimentThread` (TeensyThreads), `key=value` and batch config parser |
 | `testingM1.md` | 19 test scenarios — all modes, parameters, trial numbering, batch config, anchoring, default-start commands |
 
@@ -132,7 +132,7 @@ RESP,Trial:{n},A:{primary_LED_value},B:{green_LED_value}
 **Sessions:** 2026-06-30
 **Output:** `prototype2/GUIsubjectExp/`
 **Spec:** `docs/prototype2/prototype2-subjectExperiment-gui-requirements.md`
-**Status:** M2.1–M2.5 complete, M2.6 and M2.7 hardware-verified bug-fix rounds applied.
+**Status:** M2.1–M2.5 complete; M2.6, M2.7, M2.8 bug-fix rounds applied; GUI robustness hardening from `GUIrevision.md` applied. 23/23 offscreen tests pass.
 
 ---
 
@@ -146,7 +146,7 @@ RESP,Trial:{n},A:{primary_LED_value},B:{green_LED_value}
 | `protocol.py` | `parse_get_response`, `parse_stream_frame`, `parse_resp`, `build_batch_command` |
 | `participants.py` | 3-CSV model, `list_participants`, `next_session_number`, `record_behavioral_session`, `record_grid_session` |
 | `main_window.py` | All pages + `MainWindow` coordinator |
-| `test_offscreen.py` | 19 offscreen tests (`QT_QPA_PLATFORM=offscreen`), all passing |
+| `test_offscreen.py` | 23 offscreen tests (`QT_QPA_PLATFORM=offscreen`), all passing |
 | `docs/prototype2/subjectExperiment-gui-guide.md` | User guide: startup, flow, parameters, data files, troubleshooting |
 
 ---
@@ -176,7 +176,7 @@ ConnectPage → ParticipantPage → ExperimentSelectPage → ModeConfigPage → 
 
 **BehavioralSessionPage** — params label (mode, freq, ranges, Ref Amber, Ref Cyan) above the controls. Scatter plot (primary LED vs Green, black background). Live position marker (reference color, circle) updated from every `&@...%!` stream frame. Press markers (gray X) and running median marker (primary color, star) updated on each `RESP,Trial:n,A:v,B:v` event. Press table (Trial / Primary / Green) right of the plot. Every Start creates a new session file and CSV row.
 
-**GridSessionPage** — params label (mode, freq, ranges, Ref Amber, Ref Cyan, Order). 10×10 dot scatter plot (unvisited: dark gray, visited: primary color, current: reference color larger). Progress bar over nBaselinesStart + 100 + nBaselinesEnd total trials, incremented on TRIG falling edge (1→0). TRIG indicator label lights up in reference color when trigger is HIGH. Status label shows "Baseline trial", "Stimulus N / 100", or "Done". Completes on `DONE` line. Every Start creates a new CSV row.
+**GridSessionPage** — params label (mode, freq, ranges, Ref Amber, Ref Cyan, Order). 10×10 dot scatter plot (unvisited: dark gray, visited: primary color, current: reference color larger). Progress bar over nBaselinesStart + 100 + nBaselinesEnd total trials, incremented on each STIM (trial-number) change rather than a TRIG edge, so it is robust to the 100 ms sample rate (a short ITI can hide a TRIG edge between samples; the next trial's STIM is always observed). Position and visited-marking are gated on TRIG=1 so the inter-trial wait (LEDs zeroed, STIM unchanged) does not drag the marker to (0,0); each presented stimulus cell is marked visited at presentation and stays marked. TRIG indicator label lights up in reference color when trigger is HIGH. Status label shows "Baseline trial", "Stimulus N / 100", or "Done". Completes on `DONE` line. Every Start creates a new CSV row.
 
 ---
 
@@ -229,3 +229,42 @@ Session numbers are scoped per `(sub_id, mode_str)` pair (e.g. beh-rg and beh-bg
 **Factory Default sends explicit batch, not `defaults-rg/bg`** — hardware testing showed the firmware's `defaults-rg` command did not reliably reset `order`. The Default path now sends `freq=10;refAmber=...;order=1;...` explicitly, guaranteeing all parameters including order are set.
 
 **Every Start is a new session** — both behavioral and grid pages call `_open_run_file()` / `_record_session()` unconditionally on every Start, so Stop → Start always increments the run counter and creates a new file.
+
+---
+
+### M2.8 — Grid visited-cell fix
+
+Reported: the grid marker jumped back to (0,0) during the inter-trial wait and only that cell stayed marked; visited stimulus cells were not kept marked.
+
+Root cause: during the ITI the firmware zeroes the LED outputs but keeps the same STIM and TRIG=0. `GridSessionPage._on_line` updated the current cell from every frame, so ITI frames mapped RED=0/GREEN=0 to cell (0,0), and the subsequent visited-marking recorded (0,0) instead of the real stimulus cell.
+
+Fix: position and marking are now gated on TRIG=1; each presented stimulus cell is added to `_visited` at presentation time and stays marked; the current cell is highlighted on top. Regression test `test_grid_visited_cells_stay_marked` added.
+
+---
+
+### GUI robustness hardening (code review — `GUIrevision.md`)
+
+A review of the working GUI (`GUIrevision.md`) identified latent issues around the shared `SerialLink` lifecycle; the High/Medium items were fixed:
+
+- **Stale signal connections (High)** — session pages previously connected `_on_line` once and never disconnected, so after visiting both behavioral and grid pages, both consumed the serial stream. Now session pages use balanced `_attach`/`detach`; `MainWindow` tracks the active session page and detaches it on Back, so only the visible page processes frames.
+- **Connection loss (High)** — `connection_lost` is now owned by `MainWindow`. On a drop it tears down the session/link and auto-returns to the Connect page, which restarts auto-detection. `ConnectPage` cleanly transfers link ownership on handoff and gained `restart()` / `close_link()`.
+- **Exit cleanup (Medium)** — `MainWindow.closeEvent` now closes the link so the reader `QThread` and serial port are released.
+- **Subject-ID sanitization (Medium)** — `ParticipantPage` rejects subject IDs that are not `[A-Za-z0-9_-]+`, since the ID becomes a filename stem.
+- **Grid progress robustness (Medium)** — progress counting moved from TRIG-edge detection to STIM-change detection (see GridSessionPage above).
+- **Grid data logging (Medium, by decision)** — grid sessions intentionally log only the config CSV row; per-trial data is captured by the EEG acquisition system, time-locked via the hardware TRIG line. Documented in the `GridSessionPage` docstring and the GUI guide.
+
+Three new tests cover these: `test_inactive_session_page_is_detached`, `test_connection_lost_returns_to_connect`, `test_subject_id_rejects_invalid_chars`.
+
+---
+
+## M2.9 — Firmware grid-sequence fix (boustrophedon traversal)
+
+**Output:** `prototype2/Firmware/subjectExperiment/gridExperiment.cpp`
+**Status:** Fixed, logic-verified, and flashed + hardware-tested on Teensy 4.0. Complete.
+
+Comparison of the grid stimulus ordering between prototype1 (`prototype/firmware/gridEEG/sequence.cpp`) and prototype2 (`subjectExperiment/gridExperiment.cpp`) found they walked the grid's anti-diagonals differently:
+
+- **Prototype1** — boustrophedon (serpentine): alternates direction on each successive diagonal, so the path is continuous and consecutive stimuli stay adjacent.
+- **Prototype2 (before fix)** — unidirectional: every diagonal walked the same way, jumping back across the grid at each diagonal boundary.
+
+The order-flip convention (order 2 flips Y, 3 flips X, 4 flips both) already matched; only the diagonal direction differed. `buildDiagonalCoords` was rewritten to the boustrophedon traversal (even diagonal sum: index descending; odd: ascending — parity matched to prototype1's `d = (x-1)+(y-1)+2`). Verified in Python that prototype2 now reproduces prototype1's full 100-stimulus sequence exactly for all four orders. The GUI is unaffected — it infers grid positions from the streamed LED values, not from traversal order.

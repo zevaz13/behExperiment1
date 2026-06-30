@@ -96,7 +96,15 @@ Controls the subjectExperiment firmware. Follows the same flow as `prototype/com
 - [x] IMPORTANT. Run file overwrite / wrong count fixed: (a) _start() now always calls _open_run_file() — every Start creates a new session; (b) next_session_number scans both CSV and existing .txt files; (c) settings["mode"] is stamped with the user's selection in _on_mode_confirmed to prevent stale firmware GET responses corrupting the mode key.
 - [x] For the grid experiment screen, lower setup info now shows Order and both ref values. _format_settings appends Order for grid mode.
 - [x] IMPORTANT. Default order bug fixed: factory Default path now sends a full explicit batch (freq=10;refAmber=...;order=1;...) instead of defaults-rg/bg, guaranteeing order is reset to 1 regardless of firmware behavior.
-### M3 — Configurable Firmware
+
+### M2.8 - ISsues3
+- [x] Wrong Grid experiment behavior. The latest changes made it so the current grid point is shown, however it is not marked. It jumps back to the 0, 0  value (I believe this is the inter trial wait). and only keeps that marked. Visited grid locations in the stimuli area must be kept marked. Fixed: GridSessionPage._on_line now gates position/marking on TRIG=1, so inter-trial-wait frames (LEDs zeroed, STIM unchanged) no longer drag the marker to (0,0); each presented stimulus cell is added to _visited at presentation time and stays marked. Regression test test_grid_visited_cells_stay_marked added.
+
+### M2.9 - Firmware issue
+- [x] Compare the odering of the sequency in prototype/firmware/sequence{h,cpp} with the sequence produced in prototype2/Firmware/subjectExperiment. Found: prototype1 (gridEEG/sequence.cpp) walks anti-diagonals boustrophedon (alternating direction each diagonal, continuous serpentine path); prototype2 (gridExperiment.cpp buildDiagonalCoords) walked every diagonal in the same direction, jumping back across the grid each diagonal. Order-flip convention (2=flipY,3=flipX,4=both) already matched. Fixed: rewrote buildDiagonalCoords to boustrophedon to match prototype1. Verified in Python that prototype2 now reproduces prototype1's full 100-stimulus sequence for all 4 orders exactly. Flashed and hardware-tested on Teensy 4.0 — confirmed working.
+### M3 - Configurable experiment device
+- [ ] Brainstorming for this solution.
+### M4 — Configurable Firmware
 - [ ] Sub-mode A: Configurable Grid (per-half LED selection, steps)
 - [ ] Sub-mode B: Configurable Steps (single or combined LEDs, steps)
 - [ ] Sub-mode C: Configurable Solid (all 5 LEDs in real-time, hue output)
@@ -104,7 +112,7 @@ Controls the subjectExperiment firmware. Follows the same flow as `prototype/com
 - [ ] Hue vs EEG output frame selection
 - [ ] Full runtime configurability via serial
 
-### M4 — Configurable Firmware GUI
+### M5 — Configurable Firmware GUI
 - [ ] All M2 baseline features
 - [ ] Sub-mode selector
 - [ ] LED assignment controls per phase

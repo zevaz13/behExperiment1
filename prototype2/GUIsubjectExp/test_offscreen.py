@@ -310,8 +310,13 @@ def test_grid_done(tmp: Path) -> None:
     print("  [OK] Grid DONE: progress fills, session ends, Back re-enables")
 
 
-def test_grid_progress_increments_on_trig_edge(tmp: Path) -> None:
-    """Progress bar increments on TRIG 1→0 falling edge, not on rise."""
+def test_grid_progress_increments_on_stim_change(tmp: Path) -> None:
+    """Progress increments when STIM changes (a trial finished), not on TRIG edge.
+
+    STIM-change counting is robust to the 100 ms sampling rate: a short ITI that
+    falls between two samples can hide a TRIG 1->0 edge, but the next trial's new
+    STIM value is always observed.
+    """
     w = _make_window()
     fake = _navigate_to_mode_config(w, "grid-rg", sub_id="G03", folder=tmp)
     _confirm_default(w)
@@ -320,14 +325,25 @@ def test_grid_progress_increments_on_trig_edge(tmp: Path) -> None:
 
     assert page._progress.value() == 0
 
+    # First trial begins — no prior trial to count yet.
     fake.inject(_rg_frame(1, red=1600, green=1000, trig=1))
-    assert page._progress.value() == 0, "Progress incremented on rising edge (wrong)"
+    assert page._progress.value() == 0, "Progress incremented before any trial finished"
 
+    # Repeated frames for the same trial (including the ITI sample) do not count.
     fake.inject(_rg_frame(1, red=1600, green=1000, trig=0))
-    assert page._progress.value() == 1, \
-        f"Progress should be 1 after falling edge, got {page._progress.value()}"
+    assert page._progress.value() == 0, "Progress counted the same trial twice"
 
-    print("  [OK] Grid progress increments on TRIG falling edge")
+    # New STIM value => previous trial finished.
+    fake.inject(_rg_frame(2, red=1800, green=900, trig=1))
+    assert page._progress.value() == 1, \
+        f"Progress should be 1 after STIM change, got {page._progress.value()}"
+
+    # A trial whose entire ITI is missed (no trig=0 sample) still counts.
+    fake.inject(_rg_frame(3, red=1400, green=1100, trig=1))
+    assert page._progress.value() == 2, \
+        f"Progress should be 2 even without a TRIG-low sample, got {page._progress.value()}"
+
+    print("  [OK] Grid progress increments on STIM change (timing-robust)")
 
 
 def test_back_reentry(tmp: Path) -> None:
@@ -539,6 +555,112 @@ def test_existing_participant_list(tmp: Path) -> None:
     print("  [OK] list_participants returns subject after session is recorded")
 
 
+def test_grid_visited_cells_stay_marked(tmp: Path) -> None:
+    """ITI frames (TRIG=0, LEDs zeroed) must not move the marker to (0,0);
+    presented stimulus cells stay marked as new trials arrive (M2.8)."""
+    from main_window import _nearest_index
+
+    w = _make_window()
+    fake = _navigate_to_mode_config(w, "grid-rg", sub_id="V01", folder=tmp)
+    _confirm_default(w)
+    page = w._grid_session_page
+    page._start()
+
+    a_levels, b_levels = page._a_levels, page._b_levels
+    cell1 = (_nearest_index(a_levels, 1600), _nearest_index(b_levels, 1000))
+    cell2 = (_nearest_index(a_levels, 3200), _nearest_index(b_levels, 2000))
+    assert cell1 != (0, 0), "test premise: cell1 must be a non-origin cell"
+
+    # Stimulus presented (TRIG=1).
+    fake.inject(_rg_frame(1, red=1600, green=1000, trig=1))
+    assert page._current == cell1, f"current cell wrong: {page._current}"
+    assert cell1 in page._visited
+
+    # Inter-trial wait: same STIM, LEDs zeroed, TRIG=0. Marker must hold.
+    fake.inject(_rg_frame(1, red=0, green=0, trig=0))
+    assert page._current == cell1, f"marker jumped during ITI to {page._current}"
+    assert (0, 0) not in page._visited, "ITI origin frame was wrongly marked visited"
+    assert cell1 in page._visited, "stimulus cell lost its mark during ITI"
+
+    # Next stimulus: previous cell stays marked, new one becomes current.
+    fake.inject(_rg_frame(2, red=3200, green=2000, trig=1))
+    assert page._current == cell2
+    assert cell1 in page._visited, "previously visited cell lost its mark"
+    assert cell2 in page._visited
+
+    print("  [OK] Grid visited cells stay marked; ITI does not jump to (0,0)")
+
+
+def test_inactive_session_page_is_detached(tmp: Path) -> None:
+    """Leaving a session detaches its handler so it stops consuming the stream."""
+    w = _make_window()
+    fake = _navigate_to_mode_config(w, "beh-rg", sub_id="D01", folder=tmp)
+    _confirm_default(w)
+    beh = w._behavioral_session_page
+    assert beh._link is fake, "Behavioral page not attached on session start"
+
+    w._on_back_requested()
+    assert beh._link is None, "Behavioral page still attached after Back"
+
+    # Switch to a grid session; the behavioral page must stay detached and inert.
+    w._on_mode_selected("grid-bg")
+    fake.inject_get("grid-bg")
+    _confirm_default(w)
+    grid = w._grid_session_page
+    grid._start()
+    assert beh._link is None, "Behavioral page re-attached during grid session"
+
+    rows_before = beh._table.rowCount()
+    fake.inject("RESP,Trial:1,A:1600,B:1000")
+    assert beh._table.rowCount() == rows_before, \
+        "Detached behavioral page still processed a RESP line"
+
+    print("  [OK] Inactive session page is detached and inert")
+
+
+def test_connection_lost_returns_to_connect(tmp: Path) -> None:
+    """connection_lost tears down the session and returns to the Connect page."""
+    w = _make_window()
+    fake = _navigate_to_mode_config(w, "grid-rg", sub_id="C01", folder=tmp)
+    _confirm_default(w)
+    w._grid_session_page._start()
+
+    fake.connection_lost.emit("device unplugged")
+
+    assert w._stack.currentWidget() is w._connect_page, \
+        "Did not return to Connect page after connection loss"
+    assert w._link is None, "Link reference not cleared after connection loss"
+    assert w._active_session_page is None, "Active session not torn down"
+    assert w._grid_session_page._link is None, "Grid page still attached after disconnect"
+
+    print("  [OK] Connection loss returns to Connect page and tears down session")
+
+
+def test_subject_id_rejects_invalid_chars(tmp: Path) -> None:
+    """ParticipantPage rejects filesystem-unsafe subject IDs."""
+    w = _make_window()
+    w._on_connected(FakeSerialLink())
+    page = w._participant_page
+    page._folder_edit.setText(str(tmp))
+    page._new_radio.setChecked(True)
+
+    confirmed: list = []
+    page.participant_confirmed.connect(lambda *a: confirmed.append(a))
+
+    page._sub_id_edit.setText("bad/id")
+    page._confirm()
+    assert not confirmed, "Invalid subject ID was accepted"
+    assert "letters" in page._error_label.text().lower(), \
+        f"No validation error shown, got: {page._error_label.text()!r}"
+
+    page._sub_id_edit.setText("good_ID-01")
+    page._confirm()
+    assert confirmed and confirmed[-1][0] == "good_ID-01", \
+        "Valid subject ID was not accepted"
+
+    print("  [OK] Subject ID validation rejects unsafe characters")
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -552,7 +674,11 @@ TESTS = [
     test_live_position_bg,
     test_grid_csvs,
     test_grid_done,
-    test_grid_progress_increments_on_trig_edge,
+    test_grid_progress_increments_on_stim_change,
+    test_grid_visited_cells_stay_marked,
+    test_inactive_session_page_is_detached,
+    test_connection_lost_returns_to_connect,
+    test_subject_id_rejects_invalid_chars,
     test_back_reentry,
     test_session_number_increments,
     test_session_numbers_independent_per_exp_type,
