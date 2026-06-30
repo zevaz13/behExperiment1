@@ -132,7 +132,7 @@ RESP,Trial:{n},A:{primary_LED_value},B:{green_LED_value}
 **Session:** 2026-06-30
 **Output:** `prototype2/GUIsubjectExp/`
 **Spec:** `docs/prototype2/prototype2-subjectExperiment-gui-requirements.md`
-**Status:** M2.1 (scaffold), M2.2 (pages), M2.3 (theming) complete. M2.4 data model implemented inside participants.py. M2.5 (hardware verification) pending.
+**Status:** M2.1 (scaffold), M2.2 (pages), M2.3 (theming), M2.4 (data model) complete. M2.5 (hardware verification) pending.
 
 ---
 

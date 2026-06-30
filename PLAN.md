@@ -74,14 +74,20 @@ Controls the subjectExperiment firmware. Follows the same flow as `prototype/com
 - [x] App-wide black background; accents (borders, plot colors, button highlights) from palette
 
 #### M2.4 — Data model
-- [ ] `participants_behavioral.csv`: `sub_id, group, session, file, datetime, mode, freq, refAmber, refCyan, maxA, minA, maxB, minB, trialLength, interTrialWait`
-- [ ] `participants_grid.csv`: same minus `file`, plus `nBaselinesStart, nBaselinesEnd, order`
-- [ ] `participants_master.csv`: `sub_id, group, experiment, session, datetime`
-- [ ] Session data file `{sub_id}_R{n}.txt`: streaming append per `RESP` event, columns `Trial Primary Green`
+- [x] `participants_behavioral.csv`: `sub_id, group, session, file, datetime, mode, freq, refAmber, refCyan, maxA, minA, maxB, minB, trialLength, interTrialWait`
+- [x] `participants_grid.csv`: same minus `file`, plus `nBaselinesStart, nBaselinesEnd, order`
+- [x] `participants_master.csv`: `sub_id, group, experiment, session, datetime`
+- [x] Session data file `{sub_id}_R{n}.txt`: streaming append per `RESP` event, columns `Trial Primary Green`
 
 #### M2.5 — Verification
-- [ ] Offscreen pass (`QT_QPA_PLATFORM=offscreen`): all 4 mode paths, Default + Advanced, Back re-entry, all 3 CSVs, press accumulation, `DONE` completion
-- [ ] Hardware pass on native Windows (COM port)
+- [x] Offscreen pass (`QT_QPA_PLATFORM=offscreen`): all 4 mode paths, Default + Advanced, Back re-entry, all 3 CSVs, press accumulation, `DONE` completion — 15/15 tests pass (`test_offscreen.py`)
+- [x] Hardware pass on native Windows (COM port)
+
+### M2.6 - Issues
+- [ ] Radial buttons for selected modalities should not be black. They are not visible against a black background. For now use  	#ff7256 for that.
+- [ ] After experiment selection. If the user selects a behavioral mode, only behavioral pertinent parameters should be shown as configurable (omit trial length, and interTrialWait).
+- [ ] Each experiment modality should have its own run count. That is behavioral or grid add the mode, and then the run count. That way we know exactly how many counts of each are there.
+- [ ] In the configurable parameters for the experiments, the button with the arrow pointing upwards does not work. Downwards it works. 
 
 ### M3 — Configurable Firmware
 - [ ] Sub-mode A: Configurable Grid (per-half LED selection, steps)

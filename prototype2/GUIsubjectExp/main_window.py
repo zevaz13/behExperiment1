@@ -633,7 +633,7 @@ class BehavioralSessionPage(QWidget):
         file_name = session_file_name(self._sub_id, self._session_number)
         self._run_file = self._folder / file_name
         with self._run_file.open("w") as f:
-            f.write("Trial Primary Secondary\n")
+            f.write("Trial Primary Green\n")
         record_behavioral_session(
             self._folder, self._sub_id, self._group,
             self._session_number, file_name, self._settings
