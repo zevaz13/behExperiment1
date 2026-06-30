@@ -127,17 +127,95 @@ RESP,Trial:{n},A:{primary_LED_value},B:{green_LED_value}
 
 ---
 
-### Next milestone
+## M2 — subjectExperiment GUI (in progress)
 
-**M2 — subjectExperiment GUI** (`prototype2/GUI/subjectExperiment/`)
+**Session:** 2026-06-30
+**Output:** `prototype2/GUIsubjectExp/`
+**Spec:** `docs/prototype2/prototype2-subjectExperiment-gui-requirements.md`
+**Status:** M2.1 (scaffold), M2.2 (pages), M2.3 (theming) complete. M2.4 data model implemented inside participants.py. M2.5 (hardware verification) pending.
 
-PySide6 + pyqtgraph + pyserial, uv-managed. Targets native Windows (Teensy COM port). Mirrors the prototype1 combined GUI pattern with:
-- Port selection and serial connect/disconnect
-- Participant management (create/select, session number)
-- Mode selector (Behavioral vs Grid, RG vs BG) with matching color theme
-- Configuration panel for all firmware parameters (with send-to-device and read-from-device)
-- Real-time plot of LED values + trigger events
-- Data logging to CSV
-- Start/Stop controls
+---
 
-Reference implementation: `prototype/combined_gui/` (read-only).
+### Files
+
+| File | Description |
+|------|-------------|
+| `pyproject.toml` | uv project; deps: pyside6 ≥6.11.1, pyqtgraph ≥0.14.0, pyserial ≥3.5 |
+| `main.py` | Entry point — creates `QApplication` and `MainWindow` |
+| `serial_link.py` | `SerialLink(QThread)` — background line reader, `line_received(str)` signal, 38400 baud; `find_teensy_port()` by PJRC vendor ID |
+| `protocol.py` | `parse_get_response`, `parse_stream_frame`, `parse_resp`, `build_batch_command` |
+| `participants.py` | 3-CSV model, `list_participants`, `next_session_number`, `record_behavioral_session`, `record_grid_session` |
+| `main_window.py` | All pages + `MainWindow` coordinator (~530 lines) |
+
+---
+
+### Application flow
+
+```
+ConnectPage → ParticipantPage → ExperimentSelectPage → ModeConfigPage → Session
+                                        ↑                                   |
+                                        └─────────── Back (re-queries get) ─┘
+```
+
+---
+
+### Page descriptions
+
+**ConnectPage** — auto-detects Teensy by PJRC vendor ID `0x16C0`, retries every 500 ms up to 6 times, then falls back to manual port dropdown. Confirms firmware identity by sending `get` and accumulating lines until a `mode=` key appears in the response.
+
+**ParticipantPage** — folder picker (persisted via `QSettings`), toggle between existing participant (from `participants_master.csv`) and new participant (Subject ID + Group). Re-reads master CSV on every `showEvent`.
+
+**ExperimentSelectPage** — four radio buttons: `beh-rg`, `beh-bg`, `grid-rg`, `grid-bg`. No default preselected. On radio toggle, emits `color_mode_changed` so the app stylesheet updates immediately. On Continue, sends `get` to the firmware and waits for the full response before showing ModeConfigPage.
+
+**ModeConfigPage** — Default (navigate to session with current firmware settings) / Advanced (12 spin boxes, grid-only params grayed out for behavioral). Advanced sends a batch command (`key=val;key2=val2`) for only the changed fields, then navigates to the session page.
+
+**BehavioralSessionPage** — scatter plot (primary LED vs green, black background). Live position marker (reference color, circle) updated from every `&@...%!` stream frame. Press markers (gray X) and running median marker (primary color, star) updated on each `RESP,Trial:n,A:v,B:v` event. Press table (Trial / Primary / Secondary) right of the plot. Session file (`{sub_id}_R{n}.txt`) written with header on first Start, appended one line per press. CSV rows written to `participants_behavioral.csv` and `participants_master.csv` on first Start.
+
+**GridSessionPage** — 10×10 dot scatter plot (unvisited: dark gray, visited: primary color, current: reference color larger). Progress bar over nBaselinesStart + 100 + nBaselinesEnd total trials, incremented on TRIG falling edge (1→0). TRIG indicator label lights up in reference color when trigger is HIGH. Status label shows "Baseline trial", "Stimulus N / 100", or "Done". Completes on `DONE` line. CSV rows written to `participants_grid.csv` and `participants_master.csv` on first Start press.
+
+---
+
+### Serial protocol differences from prototype1
+
+| Aspect | Prototype 1 | Prototype 2 |
+|--------|-------------|-------------|
+| Start commands | `BEHAVIORALSTART`, `GRIDSTART` | `beh-rg`, `beh-bg`, `grid-rg`, `grid-bg` |
+| Stop | `BEHAVIORALSTOP`, `GRIDSTOP` | `stop` |
+| Query | `BEHAVIORALGET`, `GRIDGET` | `get` (multi-line response) |
+| Set | `BEHAVIORALSET key val, ...` | `key=value;key2=val2` |
+| GET response | single space-separated line | multi-line key=value, complete on `mode=` |
+| Stream frame | `0@3@2400@1420@980@0` | `&@STIM:3,Mode:RG,RED:0,...%!` |
+| Press events | embedded in stream (Press field = 1) | separate `RESP,Trial:n,A:v,B:v` line |
+| Completion | `GRID DONE` | `DONE` |
+
+---
+
+### Color theming
+
+A stylesheet template with `{primary}` is applied via `QApplication.setStyleSheet()` whenever the color mode changes. This covers button borders/text, group box titles, progress bar fill, table headers, and all backgrounds (black).
+
+| Mode | Primary | Secondary | Reference |
+|------|---------|-----------|-----------|
+| RG | `#f70404` (Red) | `#b1ff01` (Green) | `#fabd04` (Amber) |
+| BG | `#0493ff` (Blue) | `#b1ff01` (Green) | `#50fefe` (Cyan) |
+
+Plot brushes (live position, median, grid dot colors) are updated programmatically when `start_session()` is called on a session page. The TRIG indicator uses the reference color when active.
+
+---
+
+### Data model
+
+**`participants_master.csv`** — `sub_id, group, experiment, session, datetime`
+
+**`participants_behavioral.csv`** — `sub_id, group, session, file, datetime, mode, freq, refAmber, refCyan, maxA, minA, maxB, minB, trialLength, interTrialWait`
+
+**`participants_grid.csv`** — same minus `file`, plus `nBaselinesStart, nBaselinesEnd, order`
+
+**Session data file** (`{sub_id}_R{n}.txt`) — header `Trial Primary Secondary`, one row per `RESP` event appended in real time.
+
+---
+
+### Pending
+
+- **M2.5 — hardware verification** on native Windows (requires flashed Teensy on COM port)
+- The Linux venv is at `.venv-linux`; the Windows venv will be at `.venv` (both gitignored)

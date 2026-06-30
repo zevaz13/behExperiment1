@@ -60,18 +60,18 @@ Controls the subjectExperiment firmware. Follows the same flow as `prototype/com
 - [ ] `participants.py` — 3-CSV scheme (`participants_master.csv`, `participants_behavioral.csv`, `participants_grid.csv`), `next_session_number`, `record_session`, `list_participants`
 
 #### M2.2 — Pages
-- [ ] `ConnectPage` — auto-detect PJRC vendor ID `0x16C0`, manual fallback dropdown, identity check via `get`/`mode=` response
-- [ ] `ParticipantPage` — folder picker (QSettings-persisted), existing/new participant toggle, group combo (HC, PD, MD, Protan, Deutan, other)
-- [ ] `ExperimentSelectPage` — four radios: `beh-rg`, `beh-bg`, `grid-rg`, `grid-bg`; no default preselected; color scheme updates on selection change
-- [ ] `ModeConfig` — Default (no param changes) / Advanced (spin box form for all 12 params); sends batch command then start command; waits for `START ...` confirmation
-- [ ] `BehavioralSessionPage` — scatter plot (primary vs green, black bg, mode palette); live position marker from stream frame uses reference color (yellow or cyan); press markers + median from `RESP` events; press table; auto-append session file on each press. axes use primary color in x axis, and secondary color in y axis.
-- [ ] `GridSessionPage` — 10×10 dot grid (unvisited gray, visited reference color, current amber/cyan. Axes use primary color x axis, secondary in y axis); progress bar; TRIG indicator; completes on `DONE`
+- [x] `ConnectPage` — auto-detect PJRC vendor ID `0x16C0`, manual fallback dropdown, identity check via `get`/`mode=` response
+- [x] `ParticipantPage` — folder picker (QSettings-persisted), existing/new participant toggle, group combo (HC, PD, MD, Protan, Deutan, other)
+- [x] `ExperimentSelectPage` — four radios: `beh-rg`, `beh-bg`, `grid-rg`, `grid-bg`; no default preselected; color scheme updates on selection change
+- [x] `ModeConfig` — Default (no param changes) / Advanced (spin box form for all 12 params); sends batch command then start command; waits for `START ...` confirmation
+- [x] `BehavioralSessionPage` — scatter plot (primary vs green, black bg, mode palette); live position marker from stream frame uses reference color (yellow or cyan); press markers + median from `RESP` events; press table; auto-append session file on each press. axes use primary color in x axis, and secondary color in y axis.
+- [x] `GridSessionPage` — 10×10 dot grid (unvisited gray, visited reference color, current amber/cyan. Axes use primary color x axis, secondary in y axis); progress bar; TRIG indicator; completes on `DONE`
 
 #### M2.3 — Color theming
-- [ ] `set_color_mode(mode)` on MainWindow propagates palette to all pages
-- [ ] RG: primary `#f70404`, secondary `#b1ff01`, reference `#fabd04`. use these color for corresponding av
-- [ ] BG: primary `#0493ff`, secondary `#b1ff01`, reference `#50fefe`
-- [ ] App-wide black background; accents (borders, plot colors, button highlights) from palette
+- [x] `set_color_mode(mode)` on MainWindow propagates palette to all pages
+- [x] RG: primary `#f70404`, secondary `#b1ff01`, reference `#fabd04`. use these color for corresponding av
+- [x] BG: primary `#0493ff`, secondary `#b1ff01`, reference `#50fefe`
+- [x] App-wide black background; accents (borders, plot colors, button highlights) from palette
 
 #### M2.4 — Data model
 - [ ] `participants_behavioral.csv`: `sub_id, group, session, file, datetime, mode, freq, refAmber, refCyan, maxA, minA, maxB, minB, trialLength, interTrialWait`
