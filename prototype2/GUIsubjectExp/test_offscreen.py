@@ -101,18 +101,31 @@ def _navigate_to_mode_config(
     return fake
 
 
-def _confirm_default(w: MainWindow) -> None:
+def _confirm_current(w: MainWindow) -> None:
+    """Use firmware's current settings — no serial commands sent."""
     page = w._mode_config_page
-    page._default_radio.setChecked(True)
+    page._current_radio.setChecked(True)
     page._confirm()
 
 
-def _confirm_advanced(w: MainWindow, overrides: dict[str, int]) -> None:
+def _confirm_factory(w: MainWindow) -> None:
+    """Apply factory defaults (sends defaults-rg/bg, uses hardcoded defaults)."""
     page = w._mode_config_page
-    page._advanced_radio.setChecked(True)
+    page._factory_radio.setChecked(True)
+    page._confirm()
+
+
+def _confirm_configure(w: MainWindow, overrides: dict[str, int]) -> None:
+    """Configure with specific param overrides, send batch command."""
+    page = w._mode_config_page
+    page._configure_radio.setChecked(True)
     for key, val in overrides.items():
         page._fields[key].setValue(val)
     page._confirm()
+
+
+# Keep alias so tests that just want a neutral "proceed" are readable.
+_confirm_default = _confirm_current
 
 
 # ---------------------------------------------------------------------------
@@ -139,21 +152,20 @@ def test_all_modes_default(tmp: Path) -> None:
     print("  [OK] All 4 modes reach correct session page via Default")
 
 
-def test_advanced_sends_batch(tmp: Path) -> None:
-    """Advanced config sends exactly one batch command with only changed params."""
+def test_configure_sends_batch(tmp: Path) -> None:
+    """Configure mode sends exactly one batch command with only changed params."""
     w = _make_window()
     fake = _navigate_to_mode_config(w, "beh-rg", folder=tmp)
-    _confirm_advanced(w, {"freq": 20, "maxA": 3000})
+    _confirm_configure(w, {"freq": 20, "maxA": 3000})
 
     batch_cmds = [c for c in fake.sent if ";" in c and "=" in c]
     assert len(batch_cmds) == 1, f"Expected 1 batch command, got {batch_cmds}"
     parts = dict(tok.split("=") for tok in batch_cmds[0].split(";"))
     assert parts.get("freq") == "20", f"freq missing/wrong in batch: {parts}"
     assert parts.get("maxA") == "3000", f"maxA missing/wrong in batch: {parts}"
-    # Unchanged params must not appear
     assert "minA" not in parts, f"unchanged param minA in batch: {parts}"
 
-    print("  [OK] Advanced sends correct batch command (changed params only)")
+    print("  [OK] Configure sends correct batch command (changed params only)")
 
 
 def test_behavioral_csvs_and_file(tmp: Path) -> None:
@@ -169,6 +181,7 @@ def test_behavioral_csvs_and_file(tmp: Path) -> None:
     rows = list(csv.DictReader(master.open()))
     assert rows[-1]["sub_id"] == "P01"
     assert rows[-1]["experiment"] == "behavioral"
+    assert rows[-1]["mode"] == "beh-rg", f"master mode wrong: {rows[-1].get('mode')}"
     assert rows[-1]["session"] == "1"
 
     # Behavioral CSV
@@ -178,10 +191,10 @@ def test_behavioral_csvs_and_file(tmp: Path) -> None:
     assert rows[-1]["sub_id"] == "P01"
     assert rows[-1]["mode"] == "beh-rg"
     fname = rows[-1].get("file", "")
-    assert fname.startswith("P01_R"), f"file field wrong: {fname}"
+    assert fname.startswith("P01_beh-rg_R"), f"file field wrong: {fname}"
 
     # Session data file
-    sess = tmp / "P01_R1.txt"
+    sess = tmp / "P01_beh-rg_R1.txt"
     assert sess.exists(), "P01_R1.txt not created"
     header = sess.read_text().splitlines()[0]
     assert header == "Trial Primary Green", f"Wrong header: {header!r}"
@@ -204,7 +217,7 @@ def test_press_accumulation(tmp: Path) -> None:
     assert page._table.rowCount() == 3, \
         f"Expected 3 table rows, got {page._table.rowCount()}"
 
-    sess = tmp / "P02_R1.txt"
+    sess = tmp / "P02_beh-rg_R1.txt"
     lines = sess.read_text().splitlines()
     assert len(lines) == 4, f"Expected header + 3 data lines, got {lines}"
     assert lines[1] == "1 1600 1000"
@@ -259,6 +272,7 @@ def test_grid_csvs(tmp: Path) -> None:
     master_rows = list(csv.DictReader((tmp / "participants_master.csv").open()))
     assert master_rows[-1]["sub_id"] == "G01"
     assert master_rows[-1]["experiment"] == "grid"
+    assert master_rows[-1]["mode"] == "grid-rg", f"master mode wrong: {master_rows[-1].get('mode')}"
     assert master_rows[-1]["session"] == "1"
 
     grid_csv = tmp / "participants_grid.csv"
@@ -390,18 +404,123 @@ def test_color_theming(tmp: Path) -> None:
     print("  [OK] Color theming: stylesheet reflects primary color for RG and BG")
 
 
-def test_grid_only_params_disabled_for_behavioral(tmp: Path) -> None:
-    """nBaselinesStart, nBaselinesEnd, order spin boxes disabled in behavioral mode."""
+def test_behavioral_hides_irrelevant_params(tmp: Path) -> None:
+    """nBaselinesStart/End, order, trialLength, interTrialWait hidden for behavioral."""
+    from main_window import _BEHAVIORAL_HIDDEN
     w = _make_window()
     _navigate_to_mode_config(w, "beh-rg", folder=tmp)
     page = w._mode_config_page
-    page._advanced_radio.setChecked(True)
+    page._configure_radio.setChecked(True)
 
-    for key in ("nBaselinesStart", "nBaselinesEnd", "order"):
-        assert not page._fields[key].isEnabled(), \
-            f"{key} should be disabled for behavioral mode"
+    for key in _BEHAVIORAL_HIDDEN:
+        spin = page._fields[key]
+        assert not page._form.isRowVisible(spin), \
+            f"{key} row should be hidden for behavioral mode"
 
-    print("  [OK] Grid-only params disabled for behavioral mode in Advanced form")
+    # freq and LED params must remain visible
+    for key in ("freq", "refAmber", "maxA", "minA", "maxB", "minB"):
+        spin = page._fields[key]
+        assert page._form.isRowVisible(spin), \
+            f"{key} row should be visible for behavioral mode"
+
+    print("  [OK] Irrelevant params hidden for behavioral; LED/freq params visible")
+
+
+def test_grid_shows_all_params(tmp: Path) -> None:
+    """All 12 params are visible for grid mode."""
+    from main_window import _BEHAVIORAL_HIDDEN
+    w = _make_window()
+    _navigate_to_mode_config(w, "grid-rg", folder=tmp)
+    page = w._mode_config_page
+    page._configure_radio.setChecked(True)
+
+    for key in _BEHAVIORAL_HIDDEN:
+        spin = page._fields[key]
+        assert page._form.isRowVisible(spin), \
+            f"{key} row should be visible for grid mode"
+
+    print("  [OK] All params visible for grid mode")
+
+
+def test_factory_defaults_sends_batch(tmp: Path) -> None:
+    """Factory Default sends a full explicit batch (not defaults-rg/bg) to avoid order bug."""
+    from main_window import _DEFAULTS
+    for mode_str, pair in (("beh-rg", "rg"), ("grid-bg", "bg")):
+        w = _make_window()
+        fake = _navigate_to_mode_config(w, mode_str, folder=tmp)
+        _confirm_factory(w)
+
+        # Should send a batch command containing order=1 explicitly.
+        batch_cmds = [c for c in fake.sent if ";" in c and "=" in c]
+        assert batch_cmds, f"No batch command sent for {mode_str}: {fake.sent}"
+        parts = dict(tok.split("=") for tok in batch_cmds[0].split(";"))
+        assert parts.get("order") == "1", \
+            f"order not set to 1 in factory batch for {mode_str}: {parts}"
+        assert parts.get("freq") == _DEFAULTS[pair]["freq"], \
+            f"freq mismatch in factory batch: {parts}"
+
+        # Should NOT send the old defaults-rg/bg command.
+        assert f"defaults-{pair}" not in fake.sent, \
+            f"defaults-{pair} should not be sent (use explicit batch instead)"
+
+        # Settings stamped with mode_str.
+        sess_settings = (w._behavioral_session_page if mode_str.startswith("beh")
+                         else w._grid_session_page)._settings
+        assert sess_settings.get("mode") == mode_str, \
+            f"mode in session settings wrong: {sess_settings.get('mode')}"
+
+    print("  [OK] Factory Default sends explicit batch with order=1 (not defaults-rg/bg)")
+
+
+def test_stop_then_start_creates_new_session(tmp: Path) -> None:
+    """Stop then Start creates a new session file and CSV row each time."""
+    w = _make_window()
+    fake = _navigate_to_mode_config(w, "beh-rg", sub_id="R01", folder=tmp)
+    _confirm_default(w)
+    page = w._behavioral_session_page
+
+    page._start()   # session 1
+    fake.inject("RESP,Trial:1,A:1600,B:1000")
+    page._stop()
+
+    page._start()   # session 2 — must create a NEW file
+    fake.inject("RESP,Trial:1,A:1700,B:900")
+
+    beh_rows = list(csv.DictReader((tmp / "participants_behavioral.csv").open()))
+    sessions = [int(r["session"]) for r in beh_rows if r["sub_id"] == "R01"]
+    assert sessions == [1, 2], f"Expected [1, 2] sessions, got {sessions}"
+
+    assert (tmp / "R01_beh-rg_R1.txt").exists(), "Session 1 file missing"
+    assert (tmp / "R01_beh-rg_R2.txt").exists(), "Session 2 file missing"
+
+    # Each file should have only its own press.
+    s1 = (tmp / "R01_beh-rg_R1.txt").read_text().splitlines()
+    s2 = (tmp / "R01_beh-rg_R2.txt").read_text().splitlines()
+    assert len(s1) == 2, f"Session 1 file should have header + 1 press, got {s1}"
+    assert len(s2) == 2, f"Session 2 file should have header + 1 press, got {s2}"
+
+    print("  [OK] Stop then Start creates a new session file and CSV row each time")
+
+
+def test_session_numbers_independent_per_mode(tmp: Path) -> None:
+    """beh-rg and beh-bg have independent session counters for the same subject."""
+    for mode in ("beh-rg", "beh-bg"):
+        w = _make_window()
+        _navigate_to_mode_config(w, mode, sub_id="M01", folder=tmp)
+        _confirm_default(w)
+        w._behavioral_session_page._start()
+
+    beh_rows = list(csv.DictReader((tmp / "participants_behavioral.csv").open()))
+    rg_sessions = [int(r["session"]) for r in beh_rows if r["sub_id"] == "M01" and r["mode"] == "beh-rg"]
+    bg_sessions = [int(r["session"]) for r in beh_rows if r["sub_id"] == "M01" and r["mode"] == "beh-bg"]
+    assert rg_sessions == [1], f"beh-rg session should be [1], got {rg_sessions}"
+    assert bg_sessions == [1], f"beh-bg session should be [1], got {bg_sessions}"
+
+    # File names should include mode
+    assert (tmp / "M01_beh-rg_R1.txt").exists()
+    assert (tmp / "M01_beh-bg_R1.txt").exists()
+
+    print("  [OK] beh-rg and beh-bg have independent session counters and file names")
 
 
 def test_existing_participant_list(tmp: Path) -> None:
@@ -426,7 +545,7 @@ def test_existing_participant_list(tmp: Path) -> None:
 
 TESTS = [
     test_all_modes_default,
-    test_advanced_sends_batch,
+    test_configure_sends_batch,
     test_behavioral_csvs_and_file,
     test_press_accumulation,
     test_live_position_rg,
@@ -438,7 +557,11 @@ TESTS = [
     test_session_number_increments,
     test_session_numbers_independent_per_exp_type,
     test_color_theming,
-    test_grid_only_params_disabled_for_behavioral,
+    test_behavioral_hides_irrelevant_params,
+    test_grid_shows_all_params,
+    test_factory_defaults_sends_batch,
+    test_stop_then_start_creates_new_session,
+    test_session_numbers_independent_per_mode,
     test_existing_participant_list,
 ]
 

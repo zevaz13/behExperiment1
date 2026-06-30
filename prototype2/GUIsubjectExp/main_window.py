@@ -83,8 +83,21 @@ QPushButton {{
 }}
 QPushButton:hover {{ background: #1e1e1e; }}
 QPushButton:disabled {{ border-color: #333; color: #444; background: #0f0f0f; }}
-QLineEdit, QComboBox, QSpinBox {{
+QLineEdit, QComboBox {{
     background: #141414; border: 1px solid #333; padding: 2px;
+}}
+QSpinBox {{
+    background: #141414; border: 1px solid #333; padding: 2px;
+}}
+QSpinBox::up-button {{
+    subcontrol-origin: border; subcontrol-position: top right;
+    width: 16px; border-left: 1px solid #333; border-bottom: 1px solid #333;
+    background: #1e1e1e;
+}}
+QSpinBox::down-button {{
+    subcontrol-origin: border; subcontrol-position: bottom right;
+    width: 16px; border-left: 1px solid #333; border-top: 1px solid #333;
+    background: #1e1e1e;
 }}
 QGroupBox {{ border: 1px solid #2a2a2a; margin-top: 12px; padding-top: 6px; }}
 QGroupBox::title {{ color: {primary}; subcontrol-origin: margin; padding: 0 4px; }}
@@ -99,11 +112,35 @@ QHeaderView::section {{
 }}
 QTableWidget {{ gridline-color: #1e1e1e; background: #0a0a0a; }}
 QStatusBar {{ background: #000; border-top: 1px solid #1a1a1a; }}
-QRadioButton {{ spacing: 6px; }}
+QRadioButton {{ spacing: 8px; }}
+QRadioButton::indicator {{
+    width: 14px; height: 14px;
+    border: 2px solid #ff7256; border-radius: 7px;
+    background: #0a0a0a;
+}}
+QRadioButton::indicator:checked {{
+    background: #ff7256; border-color: #ff7256;
+}}
 """
 
-# Parameters grayed out when running a behavioral experiment.
-_GRID_ONLY_PARAMS = ("nBaselinesStart", "nBaselinesEnd", "order")
+# Parameters hidden from the form when running a behavioral experiment.
+_BEHAVIORAL_HIDDEN = ("nBaselinesStart", "nBaselinesEnd", "order", "trialLength", "interTrialWait")
+
+# Factory default values per color pair (mirrors firmware applyDefaultsRG/BG).
+_DEFAULTS = {
+    "rg": {
+        "freq": "10", "refAmber": "2400", "refCyan": "0",
+        "maxA": "3200", "minA": "0", "maxB": "2000", "minB": "0",
+        "nBaselinesStart": "2", "nBaselinesEnd": "2",
+        "trialLength": "3000", "interTrialWait": "750", "order": "1",
+    },
+    "bg": {
+        "freq": "10", "refAmber": "500", "refCyan": "1400",
+        "maxA": "2800", "minA": "0", "maxB": "2000", "minB": "0",
+        "nBaselinesStart": "2", "nBaselinesEnd": "2",
+        "trialLength": "3000", "interTrialWait": "750", "order": "1",
+    },
+}
 
 # SpinBox ranges for each parameter key.
 _PARAM_RANGES: dict[str, tuple[int, int]] = {
@@ -156,11 +193,15 @@ def _format_settings(mode_str: str, s: dict) -> str:
     pair = _color_pair(mode_str)
     pal = _PALETTE.get(pair, {})
     a, b = pal.get("label_a", "A"), pal.get("label_b", "B")
-    return (
+    text = (
         f"{mode_str}  |  {s.get('freq', '?')} Hz  |  "
         f"{a}: [{s.get('minA', '?')}, {s.get('maxA', '?')}]  "
-        f"{b}: [{s.get('minB', '?')}, {s.get('maxB', '?')}]"
+        f"{b}: [{s.get('minB', '?')}, {s.get('maxB', '?')}]  |  "
+        f"Ref Amber: {s.get('refAmber', '?')}  Ref Cyan: {s.get('refCyan', '?')}"
     )
+    if _exp_type(mode_str) == "grid":
+        text += f"  |  Order: {s.get('order', '?')}"
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -424,11 +465,12 @@ class ExperimentSelectPage(QWidget):
 # ---------------------------------------------------------------------------
 
 class ModeConfigPage(QWidget):
-    """Default / Advanced settings for the chosen mode.
+    """Three-way mode config: Default (factory) / Current (firmware as-is) / Configure (form).
 
-    Default: navigates to the session page with no parameter changes.
-    Advanced: sends a batch config command, then navigates to the session page.
-    The session page's Start button issues the actual firmware start command.
+    Default: sends defaults-rg/bg, navigates with hardcoded factory settings.
+    Current: no commands sent; navigates with the GET response settings.
+    Configure: sends batch command for changed params, then navigates.
+    The session page's Start button always sends the actual firmware start command.
     """
 
     mode_confirmed = Signal(str, dict)   # mode_str, settings dict
@@ -441,21 +483,22 @@ class ModeConfigPage(QWidget):
 
         self._title_label = QLabel()
 
-        self._default_radio = QRadioButton("Default (use current firmware settings)")
-        self._advanced_radio = QRadioButton("Advanced (customize parameters)")
-        self._default_radio.setChecked(True)
-        self._default_radio.toggled.connect(self._update_form_enabled)
+        self._factory_radio = QRadioButton("Default — apply factory settings for this color mode")
+        self._current_radio = QRadioButton("Current — use the firmware's current settings")
+        self._configure_radio = QRadioButton("Configure — customize parameters")
+        self._current_radio.setChecked(True)
+        self._configure_radio.toggled.connect(self._update_form_enabled)
 
         self._fields: dict[str, QSpinBox] = {}
-        form = QFormLayout()
+        self._form = QFormLayout()
         for key in GET_KEYS:
             spin = QSpinBox()
             lo, hi = _PARAM_RANGES.get(key, (0, 65535))
             spin.setRange(lo, hi)
-            form.addRow(key, spin)
+            self._form.addRow(key, spin)
             self._fields[key] = spin
         self._form_group = QGroupBox("Parameters")
-        self._form_group.setLayout(form)
+        self._form_group.setLayout(self._form)
         self._form_group.setEnabled(False)
 
         continue_btn = QPushButton("Continue")
@@ -463,8 +506,9 @@ class ModeConfigPage(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._title_label)
-        layout.addWidget(self._default_radio)
-        layout.addWidget(self._advanced_radio)
+        layout.addWidget(self._factory_radio)
+        layout.addWidget(self._current_radio)
+        layout.addWidget(self._configure_radio)
         layout.addWidget(self._form_group)
         layout.addStretch()
         layout.addWidget(continue_btn)
@@ -478,23 +522,28 @@ class ModeConfigPage(QWidget):
         is_behavioral = _exp_type(mode_str) == "behavioral"
         for key, spin in self._fields.items():
             spin.setValue(int(settings.get(key, spin.minimum())))
-            spin.setEnabled(key not in _GRID_ONLY_PARAMS or not is_behavioral)
+            self._form.setRowVisible(spin, key not in _BEHAVIORAL_HIDDEN or not is_behavioral)
 
-        self._default_radio.setChecked(True)
+        self._current_radio.setChecked(True)
         self._update_form_enabled()
 
     def _update_form_enabled(self) -> None:
-        self._form_group.setEnabled(self._advanced_radio.isChecked())
+        self._form_group.setEnabled(self._configure_radio.isChecked())
 
     def _confirm(self) -> None:
         if self._link is None:
             return
-        if self._advanced_radio.isChecked():
+        if self._factory_radio.isChecked():
+            color_pair = _color_pair(self._mode_str)
+            defaults = _DEFAULTS[color_pair]
+            self._link.send(build_batch_command({k: int(v) for k, v in defaults.items()}))
+            settings = {**defaults, "mode": self._mode_str}
+        elif self._configure_radio.isChecked():
             changed = {
                 key: spin.value()
                 for key, spin in self._fields.items()
-                if spin.value() != int(self._current_settings.get(key, spin.minimum()))
-                and spin.isEnabled()
+                if self._form.isRowVisible(spin)
+                and spin.value() != int(self._current_settings.get(key, spin.minimum()))
             }
             if changed:
                 self._link.send(build_batch_command(changed))
@@ -530,6 +579,8 @@ class BehavioralSessionPage(QWidget):
         self._press_a: list[int] = []
         self._press_b: list[int] = []
 
+        self._params_label = QLabel("")
+        self._params_label.setWordWrap(True)
         self._status_label = QLabel("Not started")
         self._start_btn = QPushButton("Start")
         self._stop_btn = QPushButton("Stop")
@@ -576,6 +627,7 @@ class BehavioralSessionPage(QWidget):
         plot_and_table.addLayout(table_col, stretch=1)
 
         layout = QVBoxLayout(self)
+        layout.addWidget(self._params_label)
         layout.addLayout(btn_row)
         layout.addWidget(self._status_label)
         layout.addLayout(plot_and_table)
@@ -608,6 +660,9 @@ class BehavioralSessionPage(QWidget):
         self._median_label.setText("Median: —")
         self._status_label.setText("Not started")
 
+        participant_note = f"   |   {self._sub_id}" if self._sub_id else ""
+        self._params_label.setText(_format_settings(mode_str, settings) + participant_note)
+
         # Apply palette to plot elements.
         self._current_marker.setSymbolBrush(palette["reference"])
         self._median_marker.setSymbolBrush(palette["primary"])
@@ -622,15 +677,14 @@ class BehavioralSessionPage(QWidget):
         self._update_buttons()
 
     def _start(self) -> None:
-        if self._run_file is None:
-            self._open_run_file()
+        self._open_run_file()
         self._send(self._mode_str)
         self._session_active = True
         self._update_buttons()
 
     def _open_run_file(self) -> None:
-        self._session_number = next_session_number(self._folder, self._sub_id, "behavioral")
-        file_name = session_file_name(self._sub_id, self._session_number)
+        self._session_number = next_session_number(self._folder, self._sub_id, self._mode_str)
+        file_name = session_file_name(self._sub_id, self._mode_str, self._session_number)
         self._run_file = self._folder / file_name
         with self._run_file.open("w") as f:
             f.write("Trial Primary Green\n")
@@ -726,7 +780,6 @@ class GridSessionPage(QWidget):
         self._settings: dict = {}
         self._palette: dict = {}
         self._running = False
-        self._session_recorded = False
 
         self._folder: Path | None = None
         self._sub_id = ""
@@ -799,7 +852,6 @@ class GridSessionPage(QWidget):
         self._mode_str = mode_str
         self._settings = settings
         self._palette = palette
-        self._session_recorded = False
         self._running = False
         self._last_trig = 0
 
@@ -853,8 +905,7 @@ class GridSessionPage(QWidget):
         self._scatter.setData(spots)
 
     def _start(self) -> None:
-        if not self._session_recorded:
-            self._record_session()
+        self._record_session()
         self._setup_grid(self._settings)
         self._send(self._mode_str)
         self._running = True
@@ -863,7 +914,7 @@ class GridSessionPage(QWidget):
         self._update_buttons()
 
     def _record_session(self) -> None:
-        self._session_number = next_session_number(self._folder, self._sub_id, "grid")
+        self._session_number = next_session_number(self._folder, self._sub_id, self._mode_str)
         record_grid_session(
             self._folder, self._sub_id, self._group,
             self._session_number, self._settings
@@ -1031,6 +1082,9 @@ class MainWindow(QMainWindow):
 
     def _on_mode_confirmed(self, mode_str: str, settings: dict) -> None:
         self._active_mode = mode_str
+        # Stamp the user-selected mode into settings so CSV logging is always consistent,
+        # regardless of what the firmware's GET response reported.
+        settings = {**settings, "mode": mode_str}
         self._settings_label.setText(_format_settings(mode_str, settings))
         palette = _PALETTE[_color_pair(mode_str)]
         self._active_palette = palette

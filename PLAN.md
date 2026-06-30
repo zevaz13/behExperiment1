@@ -84,11 +84,18 @@ Controls the subjectExperiment firmware. Follows the same flow as `prototype/com
 - [x] Hardware pass on native Windows (COM port)
 
 ### M2.6 - Issues
-- [ ] Radial buttons for selected modalities should not be black. They are not visible against a black background. For now use  	#ff7256 for that.
-- [ ] After experiment selection. If the user selects a behavioral mode, only behavioral pertinent parameters should be shown as configurable (omit trial length, and interTrialWait).
-- [ ] Each experiment modality should have its own run count. That is behavioral or grid add the mode, and then the run count. That way we know exactly how many counts of each are there.
-- [ ] In the configurable parameters for the experiments, the button with the arrow pointing upwards does not work. Downwards it works. 
+- [x] Radial buttons for selected modalities should not be black. They are not visible against a black background. For now use #ff7256 for that.
+- [x] After experiment selection. If the user selects a behavioral mode, only behavioral pertinent parameters should be shown as configurable (omit nBaselinesStart, nBaselinesEnd, order, trialLength, interTrialWait).
+- [x] Each experiment modality should have its own run count. That is behavioral or grid add the mode, and then the run count. That way we know exactly how many counts of each are there. Session files now named {sub_id}_{mode}_R{n}.txt; counters are per (sub_id, mode_str).
+- [x] In the configurable parameters for the experiments, the button with the arrow pointing upwards does not work. Downwards it works. Fixed by explicitly defining QSpinBox::up-button / ::down-button subcontrols in stylesheet.
+- [x] Please include a version of the experiment that allows to run the experiment with the default parameters, that is a default button, a button for the current configuration and one that asks for the user to configure the experiment. ModeConfigPage now has three radios: Default (factory) / Current / Configure.
 
+### M2.7 - Issues2
+- [x] The screen for behavioral experiments should also show lower experiment setup information (current shows mode, min max A, min max B) the reference values (both yellow and cyan). Added _params_label to BehavioralSessionPage; _format_settings now includes Ref Amber and Ref Cyan.
+- [x] The participants_master table should also have a mode column. Added to _MASTER_FIELDS; both record_behavioral_session and record_grid_session write it.
+- [x] IMPORTANT. Run file overwrite / wrong count fixed: (a) _start() now always calls _open_run_file() — every Start creates a new session; (b) next_session_number scans both CSV and existing .txt files; (c) settings["mode"] is stamped with the user's selection in _on_mode_confirmed to prevent stale firmware GET responses corrupting the mode key.
+- [x] For the grid experiment screen, lower setup info now shows Order and both ref values. _format_settings appends Order for grid mode.
+- [x] IMPORTANT. Default order bug fixed: factory Default path now sends a full explicit batch (freq=10;refAmber=...;order=1;...) instead of defaults-rg/bg, guaranteeing order is reset to 1 regardless of firmware behavior.
 ### M3 — Configurable Firmware
 - [ ] Sub-mode A: Configurable Grid (per-half LED selection, steps)
 - [ ] Sub-mode B: Configurable Steps (single or combined LEDs, steps)

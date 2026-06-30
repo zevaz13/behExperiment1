@@ -127,12 +127,12 @@ RESP,Trial:{n},A:{primary_LED_value},B:{green_LED_value}
 
 ---
 
-## M2 — subjectExperiment GUI (in progress)
+## M2 — subjectExperiment GUI (hardware-verified, complete)
 
-**Session:** 2026-06-30
+**Sessions:** 2026-06-30
 **Output:** `prototype2/GUIsubjectExp/`
 **Spec:** `docs/prototype2/prototype2-subjectExperiment-gui-requirements.md`
-**Status:** M2.1 (scaffold), M2.2 (pages), M2.3 (theming), M2.4 (data model) complete. M2.5 (hardware verification) pending.
+**Status:** M2.1–M2.5 complete, M2.6 and M2.7 hardware-verified bug-fix rounds applied.
 
 ---
 
@@ -145,7 +145,9 @@ RESP,Trial:{n},A:{primary_LED_value},B:{green_LED_value}
 | `serial_link.py` | `SerialLink(QThread)` — background line reader, `line_received(str)` signal, 38400 baud; `find_teensy_port()` by PJRC vendor ID |
 | `protocol.py` | `parse_get_response`, `parse_stream_frame`, `parse_resp`, `build_batch_command` |
 | `participants.py` | 3-CSV model, `list_participants`, `next_session_number`, `record_behavioral_session`, `record_grid_session` |
-| `main_window.py` | All pages + `MainWindow` coordinator (~530 lines) |
+| `main_window.py` | All pages + `MainWindow` coordinator |
+| `test_offscreen.py` | 19 offscreen tests (`QT_QPA_PLATFORM=offscreen`), all passing |
+| `docs/prototype2/subjectExperiment-gui-guide.md` | User guide: startup, flow, parameters, data files, troubleshooting |
 
 ---
 
@@ -167,11 +169,14 @@ ConnectPage → ParticipantPage → ExperimentSelectPage → ModeConfigPage → 
 
 **ExperimentSelectPage** — four radio buttons: `beh-rg`, `beh-bg`, `grid-rg`, `grid-bg`. No default preselected. On radio toggle, emits `color_mode_changed` so the app stylesheet updates immediately. On Continue, sends `get` to the firmware and waits for the full response before showing ModeConfigPage.
 
-**ModeConfigPage** — Default (navigate to session with current firmware settings) / Advanced (12 spin boxes, grid-only params grayed out for behavioral). Advanced sends a batch command (`key=val;key2=val2`) for only the changed fields, then navigates to the session page.
+**ModeConfigPage** — three radio options:
+- *Default* — sends a full explicit batch of factory defaults (`freq=10;refAmber=...;order=1;...`) so all params including order are reliably reset
+- *Current* — navigates with firmware's current GET response settings, no commands sent
+- *Configure* — spin box form; for behavioral mode the 5 grid-irrelevant params (nBaselinesStart, nBaselinesEnd, order, trialLength, interTrialWait) are hidden; sends batch for only changed fields
 
-**BehavioralSessionPage** — scatter plot (primary LED vs green, black background). Live position marker (reference color, circle) updated from every `&@...%!` stream frame. Press markers (gray X) and running median marker (primary color, star) updated on each `RESP,Trial:n,A:v,B:v` event. Press table (Trial / Primary / Secondary) right of the plot. Session file (`{sub_id}_R{n}.txt`) written with header on first Start, appended one line per press. CSV rows written to `participants_behavioral.csv` and `participants_master.csv` on first Start.
+**BehavioralSessionPage** — params label (mode, freq, ranges, Ref Amber, Ref Cyan) above the controls. Scatter plot (primary LED vs Green, black background). Live position marker (reference color, circle) updated from every `&@...%!` stream frame. Press markers (gray X) and running median marker (primary color, star) updated on each `RESP,Trial:n,A:v,B:v` event. Press table (Trial / Primary / Green) right of the plot. Every Start creates a new session file and CSV row.
 
-**GridSessionPage** — 10×10 dot scatter plot (unvisited: dark gray, visited: primary color, current: reference color larger). Progress bar over nBaselinesStart + 100 + nBaselinesEnd total trials, incremented on TRIG falling edge (1→0). TRIG indicator label lights up in reference color when trigger is HIGH. Status label shows "Baseline trial", "Stimulus N / 100", or "Done". Completes on `DONE` line. CSV rows written to `participants_grid.csv` and `participants_master.csv` on first Start press.
+**GridSessionPage** — params label (mode, freq, ranges, Ref Amber, Ref Cyan, Order). 10×10 dot scatter plot (unvisited: dark gray, visited: primary color, current: reference color larger). Progress bar over nBaselinesStart + 100 + nBaselinesEnd total trials, incremented on TRIG falling edge (1→0). TRIG indicator label lights up in reference color when trigger is HIGH. Status label shows "Baseline trial", "Stimulus N / 100", or "Done". Completes on `DONE` line. Every Start creates a new CSV row.
 
 ---
 
@@ -192,7 +197,7 @@ ConnectPage → ParticipantPage → ExperimentSelectPage → ModeConfigPage → 
 
 ### Color theming
 
-A stylesheet template with `{primary}` is applied via `QApplication.setStyleSheet()` whenever the color mode changes. This covers button borders/text, group box titles, progress bar fill, table headers, and all backgrounds (black).
+A stylesheet template with `{primary}` is applied via `QApplication.setStyleSheet()` whenever the color mode changes. Radio button indicators use a fixed `#ff7256` (visible on black). QSpinBox up/down buttons defined explicitly to fix Windows up-arrow click area.
 
 | Mode | Primary | Secondary | Reference |
 |------|---------|-----------|-----------|
@@ -205,17 +210,22 @@ Plot brushes (live position, median, grid dot colors) are updated programmatical
 
 ### Data model
 
-**`participants_master.csv`** — `sub_id, group, experiment, session, datetime`
+**`participants_master.csv`** — `sub_id, group, experiment, mode, session, datetime`
 
 **`participants_behavioral.csv`** — `sub_id, group, session, file, datetime, mode, freq, refAmber, refCyan, maxA, minA, maxB, minB, trialLength, interTrialWait`
 
 **`participants_grid.csv`** — same minus `file`, plus `nBaselinesStart, nBaselinesEnd, order`
 
-**Session data file** (`{sub_id}_R{n}.txt`) — header `Trial Primary Secondary`, one row per `RESP` event appended in real time.
+**Session data file** (`{sub_id}_{mode}_R{n}.txt`, behavioral only) — header `Trial Primary Green`, one row per `RESP` event appended in real time. Created fresh on every Start press.
+
+Session numbers are scoped per `(sub_id, mode_str)` pair (e.g. beh-rg and beh-bg are independent). `next_session_number` scans both the CSV and existing `.txt` files in the folder to find the next safe number.
 
 ---
 
-### Pending
+### Key design decisions
 
-- **M2.5 — hardware verification** on native Windows (requires flashed Teensy on COM port)
-- The Linux venv is at `.venv-linux`; the Windows venv will be at `.venv` (both gitignored)
+**`settings["mode"]` stamped in `_on_mode_confirmed`** — before passing settings to the session page, MainWindow overwrites `settings["mode"]` with the user's ExperimentSelect choice. This prevents a stale firmware GET response (which might report the previous mode) from corrupting the CSV mode column.
+
+**Factory Default sends explicit batch, not `defaults-rg/bg`** — hardware testing showed the firmware's `defaults-rg` command did not reliably reset `order`. The Default path now sends `freq=10;refAmber=...;order=1;...` explicitly, guaranteeing all parameters including order are set.
+
+**Every Start is a new session** — both behavioral and grid pages call `_open_run_file()` / `_record_session()` unconditionally on every Start, so Stop → Start always increments the run counter and creates a new file.

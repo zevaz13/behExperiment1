@@ -5,12 +5,15 @@ Three CSVs live inside the chosen save folder:
 - participants_behavioral.csv — one row per behavioral session with config
 - participants_grid.csv       — one row per grid session with config
 
-Session numbers are independent per (subject, experiment) pair.
+Session numbers are independent per (subject, mode) pair, e.g. beh-rg and
+beh-bg have separate counters. The counter is the max of existing CSV rows
+and existing .txt files in the folder to avoid collisions if the CSV is lost.
 """
 
 from __future__ import annotations
 
 import csv
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -18,7 +21,7 @@ GROUPS = ("HC", "PD", "MD", "Protan", "Deutan", "other")
 DEFAULT_GROUP = "HC"
 
 _MASTER_DB = "participants_master.csv"
-_MASTER_FIELDS = ["sub_id", "group", "experiment", "session", "datetime"]
+_MASTER_FIELDS = ["sub_id", "group", "experiment", "mode", "session", "datetime"]
 
 _BEHAVIORAL_DB = "participants_behavioral.csv"
 _BEHAVIORAL_FIELDS = [
@@ -61,19 +64,37 @@ def list_participants(folder: Path) -> list[tuple[str, str]]:
     return list(seen.items())
 
 
-def session_file_name(sub_id: str, session: int) -> str:
-    return f"{sub_id}_R{session}.txt"
+def session_file_name(sub_id: str, mode_str: str, session: int) -> str:
+    return f"{sub_id}_{mode_str}_R{session}.txt"
 
 
-def next_session_number(folder: Path, sub_id: str, experiment: str) -> int:
-    """First unused session number for this subject and experiment type."""
-    path = folder / _DB_FOR_EXPERIMENT[experiment]
+def next_session_number(folder: Path, sub_id: str, mode_str: str) -> int:
+    """First unused session number for this subject and mode string.
+
+    Scans both the per-experiment CSV and existing .txt files in the folder so
+    that the number is safe even if the CSV was deleted or out of sync.
+    """
+    experiment = "behavioral" if mode_str.startswith("beh") else "grid"
     used: set[int] = set()
-    if path.exists():
-        with path.open(newline="") as f:
+
+    # Scan CSV.
+    csv_path = folder / _DB_FOR_EXPERIMENT[experiment]
+    if csv_path.exists():
+        with csv_path.open(newline="") as f:
             for row in csv.DictReader(f):
-                if row["sub_id"] == sub_id:
+                if row["sub_id"] == sub_id and row.get("mode") == mode_str:
                     used.add(int(row["session"]))
+
+    # Scan folder for existing session files.
+    pattern = re.compile(
+        rf"^{re.escape(sub_id)}_{re.escape(mode_str)}_R(\d+)\.txt$"
+    )
+    if folder.exists():
+        for entry in folder.iterdir():
+            m = pattern.match(entry.name)
+            if m:
+                used.add(int(m.group(1)))
+
     n = 1
     while n in used:
         n += 1
@@ -90,6 +111,7 @@ def record_behavioral_session(
 ) -> None:
     """Appends one row to participants_behavioral.csv and participants_master.csv."""
     now = datetime.now().isoformat(timespec="seconds")
+    mode = settings.get("mode", "")
     _append_row(
         folder / _BEHAVIORAL_DB,
         _BEHAVIORAL_FIELDS,
@@ -107,7 +129,7 @@ def record_behavioral_session(
         folder / _MASTER_DB,
         _MASTER_FIELDS,
         {"sub_id": sub_id, "group": group, "experiment": "behavioral",
-         "session": session, "datetime": now},
+         "mode": mode, "session": session, "datetime": now},
     )
 
 
@@ -120,6 +142,7 @@ def record_grid_session(
 ) -> None:
     """Appends one row to participants_grid.csv and participants_master.csv."""
     now = datetime.now().isoformat(timespec="seconds")
+    mode = settings.get("mode", "")
     _append_row(
         folder / _GRID_DB,
         _GRID_FIELDS,
@@ -137,5 +160,5 @@ def record_grid_session(
         folder / _MASTER_DB,
         _MASTER_FIELDS,
         {"sub_id": sub_id, "group": group, "experiment": "grid",
-         "session": session, "datetime": now},
+         "mode": mode, "session": session, "datetime": now},
     )
