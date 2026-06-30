@@ -1,0 +1,13 @@
+[project]
+name = "subject-experiment-gui"
+version = "0.1.0"
+description = "GUI for the subjectExperiment firmware (prototype 2)."
+requires-python = ">=3.12"
+dependencies = [
+    "pyqtgraph>=0.14.0",
+    "pyserial>=3.5",
+    "pyside6>=6.11.1",
+]
+
+[project.scripts]
+subject-experiment-gui = "main:main"

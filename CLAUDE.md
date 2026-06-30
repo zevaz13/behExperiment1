@@ -65,3 +65,10 @@ The deliverables for this project are 2 Firmware and 2 GUIs, each of the GUIs ac
 - You have access to the agent-browser skill. Use it for online searches when needed.
 - You follow feature-dev guidelines for code generation
 - You have brainstormin skill, lets use it whenever we need to set a plan.
+
+## Color pallette
+- Red #f70404
+- Yellow #fabd04
+- Green #b1ff01
+- Blue #0493ff
+- Cyan #50fefe 

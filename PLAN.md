@@ -47,14 +47,41 @@
 - [x] testingM1.md — 18 test scenarios covering all 4 modes, every config parameter, order variants, solid baselines, trial numbering, batch config, and behavioral anchoring
 
 ### M2 — subjectExperiment GUI
-- [ ] uv project setup, PySide6 + pyqtgraph + pyserial
-- [ ] Port selection and serial connection
-- [ ] Participant management (create/select, session number)
-- [ ] Real-time data plot
-- [ ] Mode selector (Behavioral vs Grid, RG vs BG) with color theme
-- [ ] Configuration panel (all firmware parameters)
-- [ ] Data logging (CSV)
-- [ ] Start/Stop controls
+**Output:** `prototype2/GUIsubjectExp/`
+**Spec:** `docs/prototype2/prototype2-subjectExperiment-gui-requirements.md`
+
+Controls the subjectExperiment firmware. Follows the same flow as `prototype/combined_gui` but with a revised serial protocol, two color modes (RG/BG), and updated data model. UI background is black throughout; accent colors change with color mode.
+
+#### M2.1 — Project scaffold
+- [ ] `uv` project in `prototype2/GUIsubjectExp/` with deps: `pyside6`, `pyqtgraph`, `pyserial`
+- [ ] `main.py` entry point
+- [ ] `serial_link.py` — QThread serial reader, `line_received(str)` signal, 38400 baud
+- [ ] `protocol.py` — `parse_get_response`, `parse_stream_frame`, `parse_resp`, `build_batch_command`
+- [ ] `participants.py` — 3-CSV scheme (`participants_master.csv`, `participants_behavioral.csv`, `participants_grid.csv`), `next_session_number`, `record_session`, `list_participants`
+
+#### M2.2 — Pages
+- [ ] `ConnectPage` — auto-detect PJRC vendor ID `0x16C0`, manual fallback dropdown, identity check via `get`/`mode=` response
+- [ ] `ParticipantPage` — folder picker (QSettings-persisted), existing/new participant toggle, group combo (HC, PD, MD, Protan, Deutan, other)
+- [ ] `ExperimentSelectPage` — four radios: `beh-rg`, `beh-bg`, `grid-rg`, `grid-bg`; no default preselected; color scheme updates on selection change
+- [ ] `ModeConfig` — Default (no param changes) / Advanced (spin box form for all 12 params); sends batch command then start command; waits for `START ...` confirmation
+- [ ] `BehavioralSessionPage` — scatter plot (primary vs green, black bg, mode palette); live position marker from stream frame uses reference color (yellow or cyan); press markers + median from `RESP` events; press table; auto-append session file on each press. axes use primary color in x axis, and secondary color in y axis.
+- [ ] `GridSessionPage` — 10×10 dot grid (unvisited gray, visited reference color, current amber/cyan. Axes use primary color x axis, secondary in y axis); progress bar; TRIG indicator; completes on `DONE`
+
+#### M2.3 — Color theming
+- [ ] `set_color_mode(mode)` on MainWindow propagates palette to all pages
+- [ ] RG: primary `#f70404`, secondary `#b1ff01`, reference `#fabd04`. use these color for corresponding av
+- [ ] BG: primary `#0493ff`, secondary `#b1ff01`, reference `#50fefe`
+- [ ] App-wide black background; accents (borders, plot colors, button highlights) from palette
+
+#### M2.4 — Data model
+- [ ] `participants_behavioral.csv`: `sub_id, group, session, file, datetime, mode, freq, refAmber, refCyan, maxA, minA, maxB, minB, trialLength, interTrialWait`
+- [ ] `participants_grid.csv`: same minus `file`, plus `nBaselinesStart, nBaselinesEnd, order`
+- [ ] `participants_master.csv`: `sub_id, group, experiment, session, datetime`
+- [ ] Session data file `{sub_id}_R{n}.txt`: streaming append per `RESP` event, columns `Trial Primary Green`
+
+#### M2.5 — Verification
+- [ ] Offscreen pass (`QT_QPA_PLATFORM=offscreen`): all 4 mode paths, Default + Advanced, Back re-entry, all 3 CSVs, press accumulation, `DONE` completion
+- [ ] Hardware pass on native Windows (COM port)
 
 ### M3 — Configurable Firmware
 - [ ] Sub-mode A: Configurable Grid (per-half LED selection, steps)
