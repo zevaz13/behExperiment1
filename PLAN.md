@@ -104,26 +104,46 @@ Test: `tests/test_m6_instructions.md` — manual via Arduino IDE serial monitor;
 - [x] Wire `behavioralMode.h` include + `MODE_BEHAVIORAL` case into `configurableFirmware.ino`
 - [x] Write test instructions for M6
 
-**Status: implemented, awaiting manual hardware verification via `tests/test_m6_instructions.md`.**
+**Status: hardware verified — all `tests/test_m6_instructions.md` sections passed. All 4 firmware sub-modes (M1-M6) are now done and hardware-verified.**
 
 ### M7 — GUI: project setup + serial infrastructure
 Files: `pyproject.toml` (uv), `main.py`, `serial_link.py`, `protocol.py`
 Test: unit tests for protocol command builders; mock serial test for frame parsing.
-- [ ] Set up uv project
-- [ ] Implement serial_link and protocol modules
-- [ ] Write unit and mock serial tests
+- [x] Set up uv project (`prototype2/GUI/configurableFirmware/`, deps: pyside6, pyqtgraph, pyserial)
+- [x] Implement serial_link (unchanged from `GUIsubjectExp` — transport layer is protocol-agnostic) and protocol modules (new `MODE`/`SET`/`GET`/`START`/`STOP` protocol, `FRAME@` 15-field parser with `LEDA`/`LEDB` as LED-name strings)
+- [x] Write unit and mock serial tests (in `test_offscreen.py`, run via `UV_PROJECT_ENVIRONMENT=.venv-linux uv run python test_offscreen.py`)
 
 ### M8 — GUI: main window + mode selector
 Files: `main_window.py` with mode-selector screen and screen switching.
 Test: offscreen test verifies mode buttons present and trigger correct screen transitions.
-- [ ] Implement main_window
-- [ ] Write offscreen test for M8
+- [x] Implement main_window: `ConnectPage` (adapted from `GUIsubjectExp`), `ModeSelectPage` (SOLID/LINEAR/GRID/BEHAVIORAL buttons + a hue checkbox next to Solid, since Solid has no config screen of its own to ask there), shared `PlaceholderPage` for Linear/Grid/Behavioral until M10-M12 land
+- [x] Write offscreen test for M8 (navigation, placeholder routing, Back/STOP, connection-loss teardown)
 
 ### M9 — GUI: Sub-mode A view
 Files: `solid_view.py` — 5 sliders, color swatches, optional hue panel.
 Test: offscreen test verifies sliders emit correct SET commands; hue panel shown/hidden correctly.
-- [ ] Implement solid_view
-- [ ] Write offscreen test for M9
+- [x] Implement solid_view: 5 vertical sliders (synced to spinboxes) with color swatches, each sending `SET <COLOR>LED <value>`; incoming `FRAME@` lines update the displayed values without re-sending (no feedback loop); hue bar plot (R/G/B) shown only when hue was enabled at mode-select time; press rows accumulate in memory (`_press_log`) only while hue is active, per requirements — no visible table yet, saving is a later milestone
+- [x] Write offscreen test for M9 (slider->SET, sync, hue visibility, frame-driven updates, press-log gating)
+
+**Status: implemented and visually smoke-tested via offscreen screenshot rendering (`QT_QPA_PLATFORM=offscreen`). All 17 `test_offscreen.py` tests pass. Needs a real hardware run (Windows + Teensy) to confirm serial round-trip, since this can't be tested from WSL.**
+
+#### M9.1 Solid view issues. 
+- When selecting the solid view with hue sensor, there is a slight delay in how the bars are plotted. They keep moving for a long time. after changes have been done.
+- The auto scale is making things not look good. Maybe lets start with a default scale value (say 1000), but add a text box to change it, instead of it being dynamical. 
+- When auto scaling, the sliders also scale for some reason. They should always map from 0 to 4095
+
+**Root cause**: all three symptoms trace back to pyqtgraph's default Y-axis auto-range on the hue plot. It re-tweens the view range toward a new target on every incoming frame (the "keeps moving" lag), and the resulting axis-label-width churn was dragging the slider column's rendered size around too (the sliders' own range was always hardcoded `0-4095` — it was the *layout*, not the range, that was visibly shifting).
+
+- [x] `solid_view.py`: lock the hue plot's X and Y range (`setXRange`/`setYRange`, which disables pyqtgraph auto-range for those axes) instead of leaving it to auto-scale
+- [x] Add a "Hue scale max" `QSpinBox` (default 1000) above the plot; changing it updates the fixed Y-range via `setYRange`
+- [x] Add offscreen tests: fixed range unaffected by large frame values, spinbox updates range, controls visibility matches the hue plot's
+- [x] Verified with an offscreen-rendered screenshot
+
+#### M9.2. hue view issues
+- Lag issues remain when setting up values, both the setting sliders and the hue sensor are slow. My best guess is that we are saturating the serial port. We are writting and answering too often. 
+- The GUI can wait until the slidder stops moving to set a value. The plotter for hue data can take some time to plot. 
+
+**Status: implemented, all 20 `test_offscreen.py` tests pass. Needs a real hardware run to confirm the lag is gone.**
 
 ### M10 — GUI: Sub-mode B view + config I/O
 Files: `linear_view.py`, `config_io.py` — config screen, progress bar, conditional hue plots, save/load.

@@ -126,10 +126,10 @@ Special commands: `PRESS` (Solid or Behavioral + RUNNING only — simulates butt
 | M3 | Firmware Hue sensor module | **Done, hardware verified** |
 | M4 | Firmware Sub-mode B (Linear) | **Done, hardware verified** |
 | M5 | Firmware Sub-mode C (Grid) | **Done, hardware verified** |
-| M6 | Firmware Sub-mode D (Behavioral) | **Done, ready to flash** |
-| M7 | GUI project setup + serial infrastructure | TODO |
-| M8 | GUI main window + mode selector | TODO |
-| M9 | GUI Sub-mode A view (Solid) | TODO |
+| M6 | Firmware Sub-mode D (Behavioral) | **Done, hardware verified** |
+| M7 | GUI project setup + serial infrastructure | **Done** |
+| M8 | GUI main window + mode selector | **Done** |
+| M9 | GUI Sub-mode A view (Solid) | **Done, needs hardware run (Windows)** |
 | M10 | GUI Sub-mode B view + config I/O | TODO |
 | M11 | GUI Sub-mode C view (Grid) | TODO |
 | M12 | GUI Sub-mode D view (Behavioral) | TODO |
@@ -160,6 +160,33 @@ Same as Linear but with two flickering LEDs (LEDA + LEDB), forming a `steps x st
 ## What M6 (Behavioral) implements
 
 Same two-phase flicker structure as Grid (stim = LEDA + LEDB + bgStim1 + bgStim2, ref = ref1/2/3), but LEDA/LEDB intensity is driven live by `PIN_KNOB_A`/`PIN_KNOB_B` ADC reads instead of a precomputed step sequence. Anchor-offset knob strategy (`rawFromMapped`/`wrapAdc`/`walkJump`) mirrors `subjectExperiment/behavioralExperiment.cpp`: each trial anchors the knobs' current physical position to a target value, so the participant doesn't need to physically return the knob to an origin between trials. A button press — physical (`Bounce` on `PIN_BUTTON`) or serial `PRESS` (via `guiPressRequest`) — ends the trial, logs the response (`Press=1` on the next FRAME), waits `interTrialWait`, then walks to a new randomized target clamped to the interior margins. No hue support (`SET hue 1` rejected in this mode). No baselines, no fixed trial count or `trialLength` — runs until `STOP`.
+
+---
+
+## GUI file map
+
+`prototype2/GUI/configurableFirmware/`
+
+| File | Purpose | Status |
+|------|---------|--------|
+| `pyproject.toml` | uv project, deps: pyside6, pyqtgraph, pyserial | Done (M7) |
+| `main.py` | Entry point | Done (M7) |
+| `serial_link.py` | `SerialLink` (QThread), Teensy port auto-detect — unchanged from `GUIsubjectExp`, transport is protocol-agnostic | Done (M7) |
+| `protocol.py` | `parse_frame`, `parse_get_response`, `build_mode_command`, `build_set_command` for the `MODE`/`SET`/`GET`/`START`/`STOP` protocol | Done (M7) |
+| `main_window.py` | `ConnectPage`, `ModeSelectPage`, `PlaceholderPage`, `MainWindow` navigation | Done (M8) |
+| `solid_view.py` | Sub-mode A (Solid) view | Done (M9) |
+| `linear_view.py`, `config_io.py` | Sub-mode B (Linear) view + JSON save/load | **TODO M10** |
+| `grid_view.py` | Sub-mode C (Grid) view | **TODO M11** |
+| `behavioral_view.py` | Sub-mode D (Behavioral) view | **TODO M12** |
+| `test_offscreen.py` | Offscreen test suite (protocol, navigation, SolidView), `QT_QPA_PLATFORM=offscreen` | Done (M7-M9), extended each milestone |
+
+## What M8/M9 implement
+
+- **ModeSelectPage**: one button per mode (`SOLID`/`LINEAR`/`GRID`/`BEHAVIORAL`) plus a "Enable hue sensor" checkbox next to the Solid button. Solid has no config screen of its own (per design spec — it "goes directly to the experiment screen"), so its hue choice has to be made before entering it; Linear/Grid will each expose their own hue toggle on their config screens (M10/M11) once those land, since they do have a config step.
+- **Solid auto-start**: choosing Solid sends `MODE SOLID`, then `SET hue 1` if the checkbox was checked, then `START` — all before the view is shown, so the sliders are live immediately. The `SolidView`'s Back button sends `STOP` and returns to `ModeSelectPage`.
+- **Linear/Grid/Behavioral placeholder**: selecting them sends `MODE X` (so `GET`/state stays consistent) and shows a shared `PlaceholderPage` with a "not yet implemented" message and a Back button, until M10-M12 replace it with a real view.
+- **SolidView**: 5 vertical sliders (Red/Yellow/Green/Blue/Cyan, in that order) each paired with a synced `QSpinBox` and a color swatch; moving either sends `SET <COLOR>LED <value>`. Incoming `FRAME@` lines update the displayed slider/spinbox values without re-emitting `SET` (signals blocked during the frame-driven update, so there's no feedback loop). A hue bar plot (pyqtgraph `BarGraphItem`, R/G/B) is shown only when hue was enabled at mode-select time, and press rows (`Press=1` frames) accumulate in memory (`_press_log`) only while hue is active — matches requirements ("used for saving data later"); no visible table or file output yet.
+- **Testing**: `UV_PROJECT_ENVIRONMENT=.venv-linux uv run python test_offscreen.py` from `prototype2/GUI/configurableFirmware/`. Can't test real serial I/O from WSL (no COM port passthrough) — verified via `FakeSerialLink` plus offscreen-rendered screenshots (`QT_QPA_PLATFORM=offscreen`, `QWidget.grab().save(...)`).
 
 ---
 
