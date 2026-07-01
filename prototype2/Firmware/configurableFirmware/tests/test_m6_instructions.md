@@ -82,6 +82,19 @@ Mid-trial, send `STOP`. **Expected**: `OK STOP`, LEDs off immediately, no more f
 
 ---
 
+## 7. Press-event frame reports live LED values (M12.1 fix)
+
+```
+MODE BEHAVIORAL
+SET LEDA RED, minA 500, maxA 3000, LEDB GREEN, minB 500, maxB 2000, freq 10, interTrialWait 500
+START
+```
+- Turn the knobs so RED/GREEN settle at some visibly non-zero, non-equal intensity (e.g. RED ~1800, GREEN ~1200).
+- Press the button (or send `PRESS`). **Expected**: the very next `FRAME@` line has `Press=1` and its `Red`/`Green` columns show the intensity at the moment of the press (matching what you saw just before pressing) — **not** `0`/`0`. Subsequent frames during the ITI correctly show `Red`/`Green` at 0 (LEDs off) with `Press=0`.
+- This was a bug: `allLedsOff()` used to zero the LED values before the next periodic 100ms frame could report them, so the press was always logged as (0, 0). Fixed by forcing out the press-event frame (`serialFrameOutput()`) immediately, before `allLedsOff()`.
+
+---
+
 ## Pass criteria
 
 - LEDA/LEDB intensity tracks the corresponding knob live during a trial
@@ -92,3 +105,4 @@ Mid-trial, send `STOP`. **Expected**: `OK STOP`, LEDs off immediately, no more f
 - LEDA/LEDB cannot be set to the same LED (rejected)
 - Trigger HIGH during each trial, LOW during ITI
 - STOP halts immediately with LEDs off
+- The `Press=1` frame reports the actual LED intensities at the moment of the press, not 0/0

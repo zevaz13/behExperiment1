@@ -26,14 +26,14 @@ from __future__ import annotations
 
 _FRAME_PREFIX = "FRAME@"
 
-_FRAME_FIELD_ORDER = (
+FRAME_FIELDS = (
     "TrialNumber", "Red", "Yellow", "Green", "Blue", "Cyan",
     "HUE_R", "HUE_G", "HUE_B", "HUE_CT", "HUE_L",
     "LEDA", "LEDB", "Press", "Trigger",
 )
 
 # Fields that carry an int; LEDA/LEDB are left as the LED-name string.
-_FRAME_INT_FIELDS = tuple(f for f in _FRAME_FIELD_ORDER if f not in ("LEDA", "LEDB"))
+_FRAME_INT_FIELDS = tuple(f for f in FRAME_FIELDS if f not in ("LEDA", "LEDB"))
 
 
 def parse_frame(line: str) -> dict | None:
@@ -44,9 +44,9 @@ def parse_frame(line: str) -> dict | None:
     if not line.startswith(_FRAME_PREFIX):
         return None
     tokens = line[len(_FRAME_PREFIX):].split("@")
-    if len(tokens) != len(_FRAME_FIELD_ORDER):
+    if len(tokens) != len(FRAME_FIELDS):
         return None
-    result: dict = dict(zip(_FRAME_FIELD_ORDER, tokens))
+    result: dict = dict(zip(FRAME_FIELDS, tokens))
     for field in _FRAME_INT_FIELDS:
         try:
             result[field] = int(result[field])

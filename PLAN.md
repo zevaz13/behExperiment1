@@ -143,22 +143,54 @@ Test: offscreen test verifies sliders emit correct SET commands; hue panel shown
 - Lag issues remain when setting up values, both the setting sliders and the hue sensor are slow. My best guess is that we are saturating the serial port. We are writting and answering too often. 
 - The GUI can wait until the slidder stops moving to set a value. The plotter for hue data can take some time to plot. 
 
-**Status: implemented, all 20 `test_offscreen.py` tests pass. Needs a real hardware run to confirm the lag is gone.**
+- [x] `solid_view.py` `_LedColumn`: debounce the outbound `SET` — a 100ms single-shot `QTimer` restarts on every slider/spinbox change, so a fast continuous drag collapses into one `SET` sent ~100ms after motion pauses, instead of one per tick. The slider<->spinbox visual sync stays instant (no serial round trip involved).
+- [x] `solid_view.py` `SolidView`: throttle the hue bar plot to a fixed ~300ms redraw cadence — every incoming frame updates a cached `_latest_hue` tuple, but `_hue_bars.setOpts()` is only actually called by a repeating timer, started/stopped alongside the session. Press-row logging is untouched (stays immediate — presses are rare and shouldn't be delayed).
+- [x] Added offscreen tests (`QTest.qWait`) proving rapid slider changes collapse to a single `SET` with the final value, and that the hue plot only reflects new data once the throttle timer fires, not on every frame.
+
+**Status: implemented, all 22 `test_offscreen.py` tests pass. Needs a real hardware run to confirm the lag is gone.**
 
 ### M10 — GUI: Sub-mode B view + config I/O
 Files: `linear_view.py`, `config_io.py` — config screen, progress bar, conditional hue plots, save/load.
 Test: offscreen test; round-trip test for JSON save/load.
-- [ ] Implement linear_view and config_io
-- [ ] Write offscreen and round-trip tests for M10
+- [x] `param_form.py` (shared, also used by M11): `ParamForm` builds a `QFormLayout` from an ordered key list — `QSpinBox` for int params, `QComboBox` (LED name/NONE) for LED-assignment params, `QCheckBox` for `hue`. `set_values()`/`values()`/`changed_values()` round-trip against the firmware's string-based GET/SET protocol.
+- [x] `config_io.py`: plain `save_config`/`load_config`, JSON, no versioning.
+- [x] `linear_view.py`: `LinearConfigPage` (form pre-filled from `GET`, Load/Save-as-JSON buttons, Start prompts for a hue-log file path if hue is checked) and `LinearSessionPage` (progress bar + trial/total label, config summary, and — only if hue is enabled — a growing cumulative R/G/B time-series plot plus a mean-per-step plot, with every frame logged to the chosen `.txt` file while hue is active)
+- [x] Trial-completion counting uses a *set of distinct TrialNumbers seen* rather than change-detection: the firmware has no `DONE` sentinel line (unlike the old subjectExperiment protocol), so change-detection would never count the very last trial. A seen-set naturally handles that, and stays robust to repeated/skipped 100ms samples the same way `GUIsubjectExp`'s STIM-change counting was.
+- [x] Write offscreen and round-trip tests for M10 (`ParamForm`, `config_io`, navigation, progress counting robustness, hue plots, hue log file)
 
 ### M11 — GUI: Sub-mode C view
 Files: `grid_view.py` — grid plot, config screen, conditional hue plots, save/load.
 Test: offscreen test verifies grid updates on incoming frames.
-- [ ] Implement grid_view
-- [ ] Write offscreen test for M11
+- [x] `grid_view.py`: `GridConfigPage` (Linear's fields + `LEDB`/`maxB`/`minB`/`order`) and `GridSessionPage` — same progress/hue-plot/logging approach as Linear, plus a visited/current-point scatter plot (x = LEDA, y = LEDB, axes labeled with the assigned LED names) mirroring `GUIsubjectExp`'s `GridSessionPage`: position only updates on `Trigger=1` frames of non-baseline trials, so the ITI's zeroed LEDs never drag the marker to (0,0).
+- [x] Write offscreen test for M11 (navigation, total-trials/axis computation, visited-cells-stay-marked-through-ITI, baseline trials excluded from the grid but still counted toward progress)
+
+**Status (M10/M11): implemented, all 37 `test_offscreen.py` tests pass; visually smoke-tested via offscreen screenshots. Needs a real hardware run (Windows + Teensy) — can't test serial I/O from WSL.**
+#### M11.1 Issues.
+- [x] the user can decide to save or not their data for both linear and grid. The way it is is forcing the data saving, but might not be the case. We will tackle this more formally when we are dealing with saving. For now, just make it so we enable data saving or not.
+  `LinearConfigPage`/`GridConfigPage` now have a "Save hue data to file" checkbox (GUI-only, not a firmware param), unchecked by default and only enabled once `hue` is checked. The hue-log `QFileDialog` only appears on Start if both are checked — hue can be enabled purely to watch the live plots without a file being written.
+- [x] In the linear experiment mode, I want to see in the GET params line the current values of the LEDs that are set. So it should tell me for the LEDs that are not none, what Phase are they attached to, and what is their value.
+  Added `param_form.format_led_assignments(settings)` — lists every non-NONE `bgStim1/2`, `ref1/2/3`, `baselineLed1/2/3` as `"<phase>: <LED>=<value>"`, appended to the Linear session summary line (LEDA is already shown separately as the headline param).
+- [x] Same as above but for the grid test.
+  Same `format_led_assignments()` call appended to the Grid session summary (LEDA/LEDB already shown separately).
 
 ### M12 — GUI: Sub-mode D view
 Files: `behavioral_view.py` — scatter plot, press table, rolling median.
 Test: offscreen test verifies plot and table update on simulated frames.
-- [ ] Implement behavioral_view
-- [ ] Write offscreen test for M12
+- [x] `behavioral_view.py`: `BehavioralConfigPage` (no hue, no config load/save — design spec doesn't ask for either here, unlike Linear/Grid) and `BehavioralSessionPage` — live LEDA/LEDB scatter marker + press marks + rolling-median star marker/label, press table with dynamic `[LEDA name, LEDB name]` headers, mirroring `GUIsubjectExp`'s `BehavioralSessionPage`. No fixed trial count, no progress bar (firmware runs until STOP), no data saving (deferred, per requirements).
+- [x] GUI Press button sends `PRESS` directly (same page-owns-in-place-commands pattern as `LinearSessionPage`/`GridSessionPage`'s Stop button) — identical effect to the physical button, per the M6 firmware decision.
+- [x] Removed `PlaceholderPage` (dead code now that all 4 modes have real views); `MainWindow`'s Linear/Grid/Behavioral navigation is unified into one `_config_pages` dict + shared `MODE`-then-`GET` flow.
+- [x] Write offscreen test for M12 (navigation, live marker, press table/median, Press button, Back/STOP)
+
+**Status (M11.1/M12): implemented, all 46 `test_offscreen.py` tests pass; visually smoke-tested via offscreen screenshots. All 4 GUI sub-mode views (M9-M12) are now built. Needs a real hardware run (Windows + Teensy) — can't test serial I/O from WSL.**
+
+### M12.1 Issues
+- The GUI should launch full screen for configuration and experiment screens. With too many parameters is hard to tell where we are.
+- When pressing the button or the press. It always records 0,0. These values should be the currentLEDA value and currentLEDB value at pressing.
+- This experiment should also support loading and saving experiment configuration json files. call them beh_configparams...
+
+- [x] `main.py`: `window.showMaximized()` instead of `window.show()` — applies to the whole app (including config/experiment screens) from launch.
+- [x] **Root cause of the 0,0 press bug (firmware)**: `behavioralMode.cpp`'s press handler calls `allLedsOff()` right after capturing `pressA`/`pressB`, zeroing `ledVal[]` before the *asynchronous* 100ms `FRAME` timer gets a chance to report them — so the `Press=1` frame's LED columns were essentially always already 0 by the time it fired. Fixed by calling `serialFrameOutput()` synchronously right after `pressFlag = true` and before `allLedsOff()`, forcing out the press-event frame with the still-live values deterministically (no more relying on timing luck against the periodic timer). Added a verification section to `tests/test_m6_instructions.md`.
+- [x] `behavioral_view.py`: added Load/Save JSON buttons to `BehavioralConfigPage`, mirroring Linear/Grid, using `beh_configparams_<timestamp>.json` naming as requested.
+- [x] Added offscreen test for the Behavioral config save/load round-trip.
+
+**Status: implemented, all 47 `test_offscreen.py` tests pass. The 0,0 press fix is in firmware — needs reflash + hardware retest (see M6 test file section 7) to confirm.**

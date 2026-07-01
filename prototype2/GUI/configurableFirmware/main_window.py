@@ -1,9 +1,13 @@
 """Main window and top-level pages for the configurableFirmware GUI.
 
-Navigation: Connect -> ModeSelect -> per-mode view. Only Solid (M9) has a real
-view so far; Linear/Grid/Behavioral route to a shared placeholder until their
-milestones (M10-M12) land. Back from any per-mode view sends STOP and returns
-to ModeSelect.
+Navigation: Connect -> ModeSelect -> per-mode view.
+- Solid has no config screen: MainWindow sends MODE (+ SET hue) + START
+  immediately and shows SolidView.
+- Linear/Grid/Behavioral send MODE then GET, and once the full settings
+  response arrives, show that mode's config screen (Start). The config
+  screen's Start emits start_requested; MainWindow sends the changed-param
+  SET batch + START and switches to the session screen.
+Back from any per-mode view sends STOP and returns to ModeSelect.
 """
 
 from __future__ import annotations
@@ -23,6 +27,9 @@ from PySide6.QtWidgets import (
 )
 import serial
 
+from behavioral_view import BehavioralConfigPage, BehavioralSessionPage
+from grid_view import GridConfigPage, GridSessionPage
+from linear_view import LinearConfigPage, LinearSessionPage
 from protocol import build_mode_command, build_set_command, parse_get_response
 from serial_link import SerialLink, find_teensy_port, list_all_ports
 from solid_view import SolidView
@@ -182,8 +189,8 @@ class ModeSelectPage(QWidget):
     """Sub-mode selector: SOLID / LINEAR / GRID / BEHAVIORAL.
 
     Solid has no config screen (per design), so its hue choice is made here,
-    before the mode is entered. Linear/Grid/Behavioral will ask for hue (and
-    everything else) on their own config screens once those milestones land.
+    before the mode is entered. Linear/Grid ask for hue on their own config
+    screens instead; Behavioral doesn't support hue at all.
     """
 
     mode_chosen = Signal(str, bool)  # mode, hue_enabled (hue only meaningful for SOLID)
@@ -211,34 +218,6 @@ class ModeSelectPage(QWidget):
 
 
 # ---------------------------------------------------------------------------
-# PlaceholderPage
-# ---------------------------------------------------------------------------
-
-class PlaceholderPage(QWidget):
-    """Stand-in for a mode whose view hasn't been built yet (Linear/Grid/Behavioral)."""
-
-    back_requested = Signal()
-
-    def __init__(self, parent=None) -> None:
-        super().__init__(parent)
-        self._label = QLabel("")
-        back_btn = QPushButton("Back to mode selection")
-        back_btn.clicked.connect(self.back_requested)
-
-        layout = QVBoxLayout(self)
-        layout.addStretch()
-        layout.addWidget(self._label)
-        layout.addStretch()
-        layout.addWidget(back_btn)
-
-    def set_mode(self, mode: str) -> None:
-        self._label.setText(f"{MODE_LABELS.get(mode, mode)} mode isn't implemented yet.")
-
-    def detach(self) -> None:
-        pass  # nothing attached to a link
-
-
-# ---------------------------------------------------------------------------
 # MainWindow
 # ---------------------------------------------------------------------------
 
@@ -250,25 +229,52 @@ class MainWindow(QMainWindow):
         self._connect_page = ConnectPage()
         self._mode_select_page = ModeSelectPage()
         self._solid_view = SolidView()
-        self._placeholder_page = PlaceholderPage()
+        self._linear_config_page = LinearConfigPage()
+        self._linear_session_page = LinearSessionPage()
+        self._grid_config_page = GridConfigPage()
+        self._grid_session_page = GridSessionPage()
+        self._behavioral_config_page = BehavioralConfigPage()
+        self._behavioral_session_page = BehavioralSessionPage()
 
         self._stack = QStackedWidget()
         for page in (
             self._connect_page,
             self._mode_select_page,
             self._solid_view,
-            self._placeholder_page,
+            self._linear_config_page,
+            self._linear_session_page,
+            self._grid_config_page,
+            self._grid_session_page,
+            self._behavioral_config_page,
+            self._behavioral_session_page,
         ):
             self._stack.addWidget(page)
         self.setCentralWidget(self._stack)
 
         self._link: SerialLink | None = None
         self._active_page: QWidget | None = None
+        self._get_buffer: list[str] = []
+        self._pending_config_mode: str | None = None
+
+        # mode -> (config page, session page, start handler)
+        self._config_pages = {
+            "LINEAR": self._linear_config_page,
+            "GRID": self._grid_config_page,
+            "BEHAVIORAL": self._behavioral_config_page,
+        }
 
         self._connect_page.connected.connect(self._on_connected)
         self._mode_select_page.mode_chosen.connect(self._on_mode_chosen)
         self._solid_view.back_requested.connect(self._on_back_requested)
-        self._placeholder_page.back_requested.connect(self._on_back_requested)
+        self._linear_config_page.start_requested.connect(self._on_linear_start)
+        self._linear_config_page.back_requested.connect(self._on_back_requested)
+        self._linear_session_page.back_requested.connect(self._on_back_requested)
+        self._grid_config_page.start_requested.connect(self._on_grid_start)
+        self._grid_config_page.back_requested.connect(self._on_back_requested)
+        self._grid_session_page.back_requested.connect(self._on_back_requested)
+        self._behavioral_config_page.start_requested.connect(self._on_behavioral_start)
+        self._behavioral_config_page.back_requested.connect(self._on_back_requested)
+        self._behavioral_session_page.back_requested.connect(self._on_back_requested)
 
         QApplication.instance().setStyleSheet(_STYLE)
 
@@ -291,9 +297,52 @@ class MainWindow(QMainWindow):
             self._active_page = self._solid_view
             self._stack.setCurrentWidget(self._solid_view)
         else:
-            self._placeholder_page.set_mode(mode)
-            self._active_page = self._placeholder_page
-            self._stack.setCurrentWidget(self._placeholder_page)
+            self._pending_config_mode = mode
+            self._get_buffer = []
+            self._link.line_received.connect(self._on_get_response)
+            self._link.send("GET")
+
+    def _on_get_response(self, line: str) -> None:
+        self._get_buffer.append(line)
+        settings = parse_get_response(self._get_buffer)
+        if settings is None:
+            return
+        self._link.line_received.disconnect(self._on_get_response)
+        self._get_buffer = []
+        config_page = self._config_pages[self._pending_config_mode]
+        self._pending_config_mode = None
+        config_page.setup(settings)
+        self._active_page = config_page
+        self._stack.setCurrentWidget(config_page)
+
+    def _on_linear_start(self) -> None:
+        self._start_experiment(self._linear_config_page, self._linear_session_page)
+
+    def _on_grid_start(self) -> None:
+        self._start_experiment(self._grid_config_page, self._grid_session_page)
+
+    def _on_behavioral_start(self) -> None:
+        if self._link is None:
+            return
+        config_page = self._behavioral_config_page
+        changed = config_page.changed_values()
+        if changed:
+            self._link.send(build_set_command(changed))
+        self._link.send("START")
+        self._behavioral_session_page.start_session(self._link, config_page.full_settings())
+        self._active_page = self._behavioral_session_page
+        self._stack.setCurrentWidget(self._behavioral_session_page)
+
+    def _start_experiment(self, config_page, session_page) -> None:
+        if self._link is None:
+            return
+        changed = config_page.changed_values()
+        if changed:
+            self._link.send(build_set_command(changed))
+        self._link.send("START")
+        session_page.start_session(self._link, config_page.full_settings(), config_page.hue_log_path())
+        self._active_page = session_page
+        self._stack.setCurrentWidget(session_page)
 
     def _on_back_requested(self) -> None:
         if self._link is not None:

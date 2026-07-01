@@ -3,6 +3,7 @@
 #include "pinDefs.h"
 #include "ledControl.h"
 #include "timerManager.h"
+#include "dataFrame.h"
 #include <Bounce.h>
 
 static volatile bool flickerPhase = false;
@@ -97,6 +98,11 @@ void runBehavioral() {
                 stopFlicker();
                 trigFlag = 0;
                 digitalWrite(PIN_TRIGGER, LOW);
+                // Force out the press-event frame now, while ledVal[] still holds the
+                // pressed intensities — the periodic 100ms FRAME timer is async and
+                // would otherwise almost always fire after allLedsOff() below zeroes
+                // them, reporting 0/0 instead of the actual pressed values.
+                serialFrameOutput();
                 allLedsOff();
 
                 delay(interTrialWait);

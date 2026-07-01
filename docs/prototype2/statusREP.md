@@ -129,10 +129,10 @@ Special commands: `PRESS` (Solid or Behavioral + RUNNING only — simulates butt
 | M6 | Firmware Sub-mode D (Behavioral) | **Done, hardware verified** |
 | M7 | GUI project setup + serial infrastructure | **Done** |
 | M8 | GUI main window + mode selector | **Done** |
-| M9 | GUI Sub-mode A view (Solid) | **Done, needs hardware run (Windows)** |
-| M10 | GUI Sub-mode B view + config I/O | TODO |
-| M11 | GUI Sub-mode C view (Grid) | TODO |
-| M12 | GUI Sub-mode D view (Behavioral) | TODO |
+| M9 | GUI Sub-mode A view (Solid) | **Done, hardware verified** |
+| M10 | GUI Sub-mode B view + config I/O | **Done, needs hardware run (Windows)** |
+| M11 | GUI Sub-mode C view (Grid) | **Done, needs hardware run (Windows)** |
+| M12 | GUI Sub-mode D view (Behavioral) | **Done, needs hardware run (Windows)** |
 
 ---
 
@@ -161,6 +161,8 @@ Same as Linear but with two flickering LEDs (LEDA + LEDB), forming a `steps x st
 
 Same two-phase flicker structure as Grid (stim = LEDA + LEDB + bgStim1 + bgStim2, ref = ref1/2/3), but LEDA/LEDB intensity is driven live by `PIN_KNOB_A`/`PIN_KNOB_B` ADC reads instead of a precomputed step sequence. Anchor-offset knob strategy (`rawFromMapped`/`wrapAdc`/`walkJump`) mirrors `subjectExperiment/behavioralExperiment.cpp`: each trial anchors the knobs' current physical position to a target value, so the participant doesn't need to physically return the knob to an origin between trials. A button press — physical (`Bounce` on `PIN_BUTTON`) or serial `PRESS` (via `guiPressRequest`) — ends the trial, logs the response (`Press=1` on the next FRAME), waits `interTrialWait`, then walks to a new randomized target clamped to the interior margins. No hue support (`SET hue 1` rejected in this mode). No baselines, no fixed trial count or `trialLength` — runs until `STOP`.
 
+**M12.1 fix**: the press handler used to call `allLedsOff()` immediately after capturing the pressed values, zeroing `ledVal[]` before the *asynchronous* 100ms `FRAME` timer could report them — so `Press=1` frames essentially always showed 0/0 instead of the actual pressed intensities. Fixed by calling `serialFrameOutput()` synchronously right after `pressFlag = true` and before `allLedsOff()`, forcing out the press-event frame deterministically instead of relying on the periodic timer's timing.
+
 ---
 
 ## GUI file map
@@ -173,20 +175,39 @@ Same two-phase flicker structure as Grid (stim = LEDA + LEDB + bgStim1 + bgStim2
 | `main.py` | Entry point | Done (M7) |
 | `serial_link.py` | `SerialLink` (QThread), Teensy port auto-detect — unchanged from `GUIsubjectExp`, transport is protocol-agnostic | Done (M7) |
 | `protocol.py` | `parse_frame`, `parse_get_response`, `build_mode_command`, `build_set_command` for the `MODE`/`SET`/`GET`/`START`/`STOP` protocol | Done (M7) |
-| `main_window.py` | `ConnectPage`, `ModeSelectPage`, `PlaceholderPage`, `MainWindow` navigation | Done (M8) |
+| `main_window.py` | `ConnectPage`, `ModeSelectPage`, `MainWindow` navigation | Done (M8, extended M10-M12) |
 | `solid_view.py` | Sub-mode A (Solid) view | Done (M9) |
-| `linear_view.py`, `config_io.py` | Sub-mode B (Linear) view + JSON save/load | **TODO M10** |
-| `grid_view.py` | Sub-mode C (Grid) view | **TODO M11** |
-| `behavioral_view.py` | Sub-mode D (Behavioral) view | **TODO M12** |
-| `test_offscreen.py` | Offscreen test suite (protocol, navigation, SolidView), `QT_QPA_PLATFORM=offscreen` | Done (M7-M9), extended each milestone |
+| `param_form.py` | Shared config form widget (Linear/Grid/Behavioral) | Done (M10, extended M11.1/M12) |
+| `config_io.py` | JSON save/load for experiment configs | Done (M10) |
+| `linear_view.py` | Sub-mode B (Linear) config + session views | Done (M10, extended M11.1) |
+| `grid_view.py` | Sub-mode C (Grid) config + session views | Done (M11, extended M11.1) |
+| `behavioral_view.py` | Sub-mode D (Behavioral) config + session views | Done (M12) |
+| `test_offscreen.py` | Offscreen test suite (protocol, navigation, all views), `QT_QPA_PLATFORM=offscreen` | Done (M7-M12), extended each milestone |
 
 ## What M8/M9 implement
 
-- **ModeSelectPage**: one button per mode (`SOLID`/`LINEAR`/`GRID`/`BEHAVIORAL`) plus a "Enable hue sensor" checkbox next to the Solid button. Solid has no config screen of its own (per design spec — it "goes directly to the experiment screen"), so its hue choice has to be made before entering it; Linear/Grid will each expose their own hue toggle on their config screens (M10/M11) once those land, since they do have a config step.
+- **ModeSelectPage**: one button per mode (`SOLID`/`LINEAR`/`GRID`/`BEHAVIORAL`) plus a "Enable hue sensor" checkbox next to the Solid button. Solid has no config screen of its own (per design spec — it "goes directly to the experiment screen"), so its hue choice has to be made before entering it; Linear/Grid each expose their own hue toggle on their config screens instead, since they do have a config step. Behavioral doesn't support hue at all.
 - **Solid auto-start**: choosing Solid sends `MODE SOLID`, then `SET hue 1` if the checkbox was checked, then `START` — all before the view is shown, so the sliders are live immediately. The `SolidView`'s Back button sends `STOP` and returns to `ModeSelectPage`.
-- **Linear/Grid/Behavioral placeholder**: selecting them sends `MODE X` (so `GET`/state stays consistent) and shows a shared `PlaceholderPage` with a "not yet implemented" message and a Back button, until M10-M12 replace it with a real view.
 - **SolidView**: 5 vertical sliders (Red/Yellow/Green/Blue/Cyan, in that order) each paired with a synced `QSpinBox` and a color swatch; moving either sends `SET <COLOR>LED <value>`. Incoming `FRAME@` lines update the displayed slider/spinbox values without re-emitting `SET` (signals blocked during the frame-driven update, so there's no feedback loop). A hue bar plot (pyqtgraph `BarGraphItem`, R/G/B) is shown only when hue was enabled at mode-select time, and press rows (`Press=1` frames) accumulate in memory (`_press_log`) only while hue is active — matches requirements ("used for saving data later"); no visible table or file output yet.
 - **Testing**: `UV_PROJECT_ENVIRONMENT=.venv-linux uv run python test_offscreen.py` from `prototype2/GUI/configurableFirmware/`. Can't test real serial I/O from WSL (no COM port passthrough) — verified via `FakeSerialLink` plus offscreen-rendered screenshots (`QT_QPA_PLATFORM=offscreen`, `QWidget.grab().save(...)`).
+
+## What M10/M11 (+ M11.1) implement
+
+- **`param_form.py`** (shared by Linear/Grid/Behavioral): `ParamForm(keys)` builds a `QFormLayout` from `PARAM_SPEC` — `QSpinBox` for int params, `QComboBox` (`NONE`/`RED`/`YELLOW`/`GREEN`/`BLUE`/`CYAN`) for LED-assignment params, `QCheckBox` for `hue`. `set_values()` populates from a GET-response-style string dict; `values()` reads back natively typed; `changed_values(baseline)` diffs against a baseline for a minimal `SET` batch. `format_led_assignments(settings)` (M11.1) summarizes every non-NONE `bgStim1/2`/`ref1/2/3`/`baselineLed1/2/3` as `"<phase>: <LED>=<value>"`, appended to each session page's summary line (LEDA/LEDB are shown separately as the headline params). `LED_FRAME_KEY` maps an LED name to its `FRAME@` column, shared by Grid's and Behavioral's live-position tracking.
+- **Navigation**: choosing Linear/Grid/Behavioral sends `MODE X`, then `GET`, buffering lines (same pattern as `ConnectPage`) until the `mode=` line completes the response; the corresponding config page is then shown pre-filled. `MainWindow` looks up the right config page via a `mode -> config page` dict rather than per-mode branches. The config page's Start button computes `changed_values()` against the GET baseline; `start_requested` tells `MainWindow` to send the `SET` batch + `START` and show the session page.
+- **Load/Save**: `LinearConfigPage`/`GridConfigPage` have Load/Save buttons using plain `QFileDialog`s (`linearParamConfig_<timestamp>.json` / `gridParamConfig_<timestamp>.json` suggested names); editing the form directly is the "configure" path, Load is the "load experimental setup" path — both work off the same form rather than a hard either/or branch. Behavioral has neither, per the design spec (it doesn't ask for config load/save there, unlike Linear/Grid).
+- **Hue data saving is opt-in (M11.1)**: a "Save hue data to file" checkbox (GUI-only, not sent to the firmware) sits below the form, disabled unless `hue` is checked, and defaults unchecked. The hue-log `QFileDialog` (`linearhue_exp_<timestamp>.txt` / `gridhue_exp_<timestamp>.txt`) only appears on Start if both are checked — hue can be enabled purely to watch the live plots without a file being written every session.
+- **Progress counting**: tracks a *set of distinct `TrialNumber`s seen* rather than detecting changes between frames. The firmware has no completion sentinel (unlike the old subjectExperiment protocol's `DONE` line), so change-detection would never count the final trial; a seen-set counts it as soon as its first frame arrives, while staying just as robust to repeated/skipped 100ms samples.
+- **Hue plots** (shown only if hue enabled): a "cumulative" plot is a growing per-frame R/G/B time series (auto-ranging Y, per your call — different failure mode than the M9.1 bar-chart bug since it's a smoothly growing line, not a live-redrawn bar), and a "mean per step" plot appends one R/G/B point per completed *stimulus* trial (baseline trials excluded) once its `TrialNumber` changes. All frames are logged to the chosen `.txt` file while hue is active and the save checkbox was checked.
+- **GridSessionPage** additionally shows a visited/current-point scatter (x = LEDA, y = LEDB, axes labeled with the assigned LED names), updated only on `Trigger=1` frames of non-baseline trials — mirrors `GUIsubjectExp`'s `GridSessionPage` logic so the ITI's zeroed LEDs never drag the marker to (0, 0).
+
+## What M12 implements
+
+- **BehavioralConfigPage**: `ParamForm` with Behavioral's fields (`freq`, `interTrialWait`, `LEDA`/`maxA`/`minA`, `LEDB`/`maxB`/`minB`, `bgStim1/2`, `ref1/2/3` — no `hue`, no `steps`/`order`/baselines/`trialLength`, matching what the firmware actually reads in this mode). Load/Save JSON buttons added in M12.1 (`beh_configparams_<timestamp>.json`), mirroring Linear/Grid.
+- **BehavioralSessionPage**: mirrors `GUIsubjectExp`'s `BehavioralSessionPage` — a live LEDA/LEDB position marker updated from every frame (via `LED_FRAME_KEY`), press marks (`Press=1` frames) accumulating a scatter + a rolling-median star marker and label, and a press table with dynamic `[LEDA name, LEDB name]` column headers. No progress bar (the firmware has no fixed trial count in this mode, runs until `STOP`). No data saving yet (explicitly deferred by requirements — "we will save data with the stimulator status at button presses" later).
+- **Press button**: sends `PRESS` directly from the session page (same "page owns its own in-place commands" pattern as `LinearSessionPage`/`GridSessionPage`'s Stop button) — identical effect to the physical button, per the M6 firmware decision that made `PRESS` valid in Behavioral mode. As of the M12.1 firmware fix, the resulting `Press=1` frame correctly reports the LED values at the moment of the press (previously always 0/0 — see "What M6 (Behavioral) implements" above).
+- **`PlaceholderPage` removed**: with all 4 modes now having real views, the placeholder was dead code.
+- **M12.1**: `main.py` launches with `window.showMaximized()` — with this many parameters on the config screens, a small default window made it hard to see the whole picture.
 
 ---
 
@@ -196,4 +217,4 @@ Same two-phase flicker structure as Grid (stim = LEDA + LEDB + bgStim1 + bgStim2
 - **Stack**: PySide6 + pyqtgraph + pyserial, managed by `uv`
 - **Must run on Windows** (COM port). When developing from WSL: `UV_PROJECT_ENVIRONMENT=.venv-linux`
 - Follows `prototype2/GUIsubjectExp/` structure: `serial_link.py`, `protocol.py`, per-mode view files
-- Frame parser: looks for lines starting with `FRAME@`, splits on `@`, 16 tokens
+- Frame parser: looks for lines starting with `FRAME@`, splits the remainder on `@` into 15 fields (`protocol.FRAME_FIELDS`)
