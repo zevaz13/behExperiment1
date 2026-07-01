@@ -2,6 +2,7 @@
 #include "globals.h"
 #include "pinDefs.h"
 #include "ledControl.h"
+#include "hueSensor.h"
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -29,6 +30,12 @@ static void printGet() {
     Serial.print("ref2Int=");         Serial.println(ref2Int);
     Serial.print("ref3Led=");         Serial.println(ledIdStr(ref3Led));
     Serial.print("ref3Int=");         Serial.println(ref3Int);
+    Serial.print("baselineLed1=");    Serial.println(ledIdStr(baselineLed1));
+    Serial.print("baselineLed1Val="); Serial.println(baselineLed1Val);
+    Serial.print("baselineLed2=");    Serial.println(ledIdStr(baselineLed2));
+    Serial.print("baselineLed2Val="); Serial.println(baselineLed2Val);
+    Serial.print("baselineLed3=");    Serial.println(ledIdStr(baselineLed3));
+    Serial.print("baselineLed3Val="); Serial.println(baselineLed3Val);
     Serial.print("hue=");             Serial.println(hueEnabled ? 1 : 0);
     Serial.print("REDLED=");          Serial.println((int)ledVal[LED_RED]);
     Serial.print("YELLOWLED=");       Serial.println((int)ledVal[LED_YELLOW]);
@@ -89,18 +96,24 @@ static bool applyParam(const String& p, const String& v) {
     else if (p == "minA")         { minA = constrain(v.toInt(), 0, 4095); }
     else if (p == "maxB")         { maxB = constrain(v.toInt(), 0, 4095); }
     else if (p == "minB")         { minB = constrain(v.toInt(), 0, 4095); }
-    else if (p == "LEDA")         { ledA = parseLedId(v); }
-    else if (p == "LEDB")         { ledB = parseLedId(v); }
-    else if (p == "bgStim1Led")   { bgStim1Led = parseLedId(v); }
+    else if (p == "LEDA")         { if (!isValidLedName(v)) return false; ledA = parseLedId(v); }
+    else if (p == "LEDB")         { if (!isValidLedName(v)) return false; ledB = parseLedId(v); }
+    else if (p == "bgStim1Led")   { if (!isValidLedName(v)) return false; bgStim1Led = parseLedId(v); }
     else if (p == "bgStim1Int")   { bgStim1Int = constrain(v.toInt(), 0, 4095); }
-    else if (p == "bgStim2Led")   { bgStim2Led = parseLedId(v); }
+    else if (p == "bgStim2Led")   { if (!isValidLedName(v)) return false; bgStim2Led = parseLedId(v); }
     else if (p == "bgStim2Int")   { bgStim2Int = constrain(v.toInt(), 0, 4095); }
-    else if (p == "ref1Led")      { ref1Led = parseLedId(v); }
+    else if (p == "ref1Led")      { if (!isValidLedName(v)) return false; ref1Led = parseLedId(v); }
     else if (p == "ref1Int")      { ref1Int = constrain(v.toInt(), 0, 4095); }
-    else if (p == "ref2Led")      { ref2Led = parseLedId(v); }
+    else if (p == "ref2Led")      { if (!isValidLedName(v)) return false; ref2Led = parseLedId(v); }
     else if (p == "ref2Int")      { ref2Int = constrain(v.toInt(), 0, 4095); }
-    else if (p == "ref3Led")      { ref3Led = parseLedId(v); }
+    else if (p == "ref3Led")      { if (!isValidLedName(v)) return false; ref3Led = parseLedId(v); }
     else if (p == "ref3Int")      { ref3Int = constrain(v.toInt(), 0, 4095); }
+    else if (p == "baselineLed1")    { if (!isValidLedName(v)) return false; baselineLed1 = parseLedId(v); }
+    else if (p == "baselineLed1Val") { baselineLed1Val = constrain(v.toInt(), 0, 4095); }
+    else if (p == "baselineLed2")    { if (!isValidLedName(v)) return false; baselineLed2 = parseLedId(v); }
+    else if (p == "baselineLed2Val") { baselineLed2Val = constrain(v.toInt(), 0, 4095); }
+    else if (p == "baselineLed3")    { if (!isValidLedName(v)) return false; baselineLed3 = parseLedId(v); }
+    else if (p == "baselineLed3Val") { baselineLed3Val = constrain(v.toInt(), 0, 4095); }
     else if (p == "hue")          { hueEnabled = (v.toInt() != 0); }
     // Solid-mode direct LED values — also applied live if running solid
     else if (p == "REDLED")    { int val = constrain(v.toInt(), 0, 4095); ledVal[LED_RED]    = val; if (activeMode == MODE_SOLID && fwState == STATE_RUNNING) analogWrite(PIN_RED,    val); }
@@ -166,8 +179,10 @@ static void handleStart() {
         return;
     }
     if (hueEnabled) {
-        // hueSensor.isReady() checked in M3; stub always passes here
-        // TODO M3: if (!hueReady()) { Serial.println("ERR hue sensor not connected"); return; }
+        if (!initHueSensor()) {
+            Serial.println("ERR hue sensor not connected");
+            return;
+        }
     }
     trCnt    = 0;
     trigFlag = 0;

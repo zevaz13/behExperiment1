@@ -38,6 +38,9 @@ extern int   bgStim2Int;
 extern LedId ref1Led, ref2Led, ref3Led;  // reference phase LEDs
 extern int   ref1Int, ref2Int, ref3Int;
 
+extern LedId baselineLed1, baselineLed2, baselineLed3;  // baseline solid-display LEDs
+extern int   baselineLed1Val, baselineLed2Val, baselineLed3Val;
+
 // ── Hue sensor ────────────────────────────────────────────────────────────
 extern bool hueEnabled;
 extern volatile int hueR, hueG, hueB, hueCT, hueL;
@@ -62,5 +65,6 @@ void applyDefaults();
 int  ledPin(LedId id);
 const char* ledIdStr(LedId id);
 LedId parseLedId(const String& s);
+bool  isValidLedName(const String& s);
 
 #endif

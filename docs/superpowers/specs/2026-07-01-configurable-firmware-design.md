@@ -114,7 +114,7 @@ TriggerCue@TrialNumber@Red@Yellow@Green@Blue@Cyan@HUE_R@HUE_G@HUE_B@HUE_CT@HUE_L
 ```
 
 - Fields not relevant to the current mode sent as `-99`
-- `LEDA` / `LEDB` carry current intensity of the flickering LEDs (identity is fixed in config)
+- `LEDA` / `LEDB` carry the *name* of the assigned LED (e.g. `RED`, or `NONE` if unset) — the intensity is already available in the matching Red/Yellow/Green/Blue/Cyan column
 - `Press` is `1` on the frame where a button press occurs, else `0`
 - `Trigger` reflects the hardware trigger pin state
 - `TrialNumber` starts at `1001` for baseline periods, `1` for stimulus trials

@@ -27,6 +27,9 @@ int   bgStim2Int = 0;
 LedId ref1Led = LED_NONE, ref2Led = LED_NONE, ref3Led = LED_NONE;
 int   ref1Int = 0, ref2Int = 0, ref3Int = 0;
 
+LedId baselineLed1 = LED_NONE, baselineLed2 = LED_NONE, baselineLed3 = LED_NONE;
+int   baselineLed1Val = 0, baselineLed2Val = 0, baselineLed3Val = 0;
+
 bool hueEnabled = false;
 volatile int hueR = -99, hueG = -99, hueB = -99, hueCT = -99, hueL = -99;
 
@@ -55,6 +58,9 @@ void applyDefaults() {
     ref1Led = LED_NONE; ref1Int = 0;
     ref2Led = LED_NONE; ref2Int = 0;
     ref3Led = LED_NONE; ref3Int = 0;
+    baselineLed1 = LED_NONE; baselineLed1Val = 0;
+    baselineLed2 = LED_NONE; baselineLed2Val = 0;
+    baselineLed3 = LED_NONE; baselineLed3Val = 0;
     hueEnabled = false;
     updateHalfPeriod();
 }
@@ -88,4 +94,10 @@ LedId parseLedId(const String& s) {
     if (s.equalsIgnoreCase("BLUE"))   return LED_BLUE;
     if (s.equalsIgnoreCase("CYAN"))   return LED_CYAN;
     return LED_NONE;
+}
+
+bool isValidLedName(const String& s) {
+    return s.equalsIgnoreCase("RED")    || s.equalsIgnoreCase("YELLOW") ||
+           s.equalsIgnoreCase("GREEN")  || s.equalsIgnoreCase("BLUE")   ||
+           s.equalsIgnoreCase("CYAN")   || s.equalsIgnoreCase("NONE");
 }

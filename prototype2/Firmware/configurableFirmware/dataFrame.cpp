@@ -4,9 +4,6 @@
 void serialFrameOutput() {
     if (!started) return;
 
-    int leda = (ledA != LED_NONE) ? (int)ledVal[ledA] : -99;
-    int ledb = (ledB != LED_NONE) ? (int)ledVal[ledB] : -99;
-
     Serial.print("FRAME@");
     Serial.print(trCnt);          Serial.print("@");
     Serial.print(ledVal[LED_RED]);    Serial.print("@");
@@ -19,8 +16,8 @@ void serialFrameOutput() {
     Serial.print(hueEnabled ? hueB  : -99); Serial.print("@");
     Serial.print(hueEnabled ? hueCT : -99); Serial.print("@");
     Serial.print(hueEnabled ? hueL  : -99); Serial.print("@");
-    Serial.print(leda);            Serial.print("@");
-    Serial.print(ledb);            Serial.print("@");
+    Serial.print(ledIdStr(ledA));   Serial.print("@");
+    Serial.print(ledIdStr(ledB));   Serial.print("@");
     Serial.print(pressFlag ? 1 : 0); Serial.print("@");
     Serial.println(trigFlag);
 

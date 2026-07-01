@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Wire.h>
 #include <TeensyThreads.h>
 
 #include "pinDefs.h"
@@ -7,9 +8,10 @@
 #include "timerManager.h"
 #include "serialParser.h"
 #include "dataFrame.h"
+#include "hueSensor.h"
 
 #include "solidMode.h"
-// #include "linearMode.h"    // M4
+#include "linearMode.h"
 // #include "gridMode.h"      // M5
 // #include "behavioralMode.h" // M6
 
@@ -20,7 +22,7 @@ void experimentThread() {
 
         switch (activeMode) {
             case MODE_SOLID:      runSolid();      break;
-            // case MODE_LINEAR:     runLinear();     break;  // M4
+            case MODE_LINEAR:     runLinear();     break;
             // case MODE_GRID:       runGrid();       break;  // M5
             // case MODE_BEHAVIORAL: runBehavioral(); break;  // M6
             default:
@@ -54,5 +56,6 @@ void setup() {
 }
 
 void loop() {
+    if (hueEnabled) readHue();
     handleSerial();
 }
