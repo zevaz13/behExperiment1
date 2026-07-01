@@ -3,6 +3,7 @@
 #include "pinDefs.h"
 #include "ledControl.h"
 #include "timerManager.h"
+#include "baselineRunner.h"
 
 static volatile bool flickerPhase = false;
 
@@ -31,31 +32,6 @@ static void linearFlickerISR() {
         int r1 = ledPin(ref1Led); if (r1 >= 0) analogWrite(r1, ref1Int);
         int r2 = ledPin(ref2Led); if (r2 >= 0) analogWrite(r2, ref2Int);
         int r3 = ledPin(ref3Led); if (r3 >= 0) analogWrite(r3, ref3Int);
-    }
-}
-
-// Solid baseline LEDs for baseline trials (no flicker).
-static void runBaselines(int count, int startCount) {
-    for (int i = 0; i < count && started; i++) {
-        trCnt = startCount + i;
-
-        // Show baseline LEDs solid — update ledVal[] so the frame reflects them
-        for (int j = 0; j < 5; j++) ledVal[j] = 0;
-        if (baselineLed1 != LED_NONE) { ledVal[baselineLed1] = baselineLed1Val; analogWrite(ledPin(baselineLed1), baselineLed1Val); }
-        if (baselineLed2 != LED_NONE) { ledVal[baselineLed2] = baselineLed2Val; analogWrite(ledPin(baselineLed2), baselineLed2Val); }
-        if (baselineLed3 != LED_NONE) { ledVal[baselineLed3] = baselineLed3Val; analogWrite(ledPin(baselineLed3), baselineLed3Val); }
-
-        trigFlag = 1;
-        digitalWrite(PIN_TRIGGER, HIGH);
-
-        unsigned long t0 = millis();
-        while (millis() - t0 < trialLength && started) {}
-
-        allLedsOff();
-        trigFlag = 0;
-        digitalWrite(PIN_TRIGGER, LOW);
-
-        delay(interTrialWait);
     }
 }
 

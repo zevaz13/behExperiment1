@@ -26,6 +26,10 @@ Key documents:
 - **Hue sensor**: Optional TCS34725 via I2C (`Adafruit_TCS34725` library). `initHueSensor()` called on START if `hue=1`; returns error if not found. `readHue()` called from `loop()` when `hueEnabled`.
 - **Testing**: Manual instructions in `tests/test_mN_instructions.md`, run via Arduino IDE serial monitor. No Python serial scripts (COM port not accessible from WSL).
 - **No auto-commits**: User commits manually.
+- **LED-uniqueness validation**: `serialParser.cpp::applyParam()` rejects a LED-role SET (`LEDA`/`LEDB`/`bgStim1Led`/`bgStim2Led`, `ref1/2/3Led`, `baselineLed1/2/3`) if it would duplicate a non-`NONE` LED already assigned to another role in the same phase group (stim / ref / baseline). Cross-phase reuse of the same LED is allowed. Shared code, so this applies to Linear and Grid alike.
+- **Baseline logic is shared**: `baselineRunner.h/cpp` holds `runBaselines()`, used identically by `linearMode.cpp` and `gridMode.cpp`. Behavioral mode (M6) has no baselines per requirements, so it doesn't call it.
+- **Behavioral PRESS**: physical button (`Bounce` on `PIN_BUTTON`) and the serial `PRESS` command have identical effect in Behavioral mode. Since `handleSerial()` (main thread) and `runBehavioral()` (experiment thread, via TeensyThreads) run on different threads, `PRESS` can't call the trial-advance logic directly — it sets `guiPressRequest`, which `runBehavioral()`'s polling loop consumes exactly like a button edge.
+- **No hue in Behavioral**: `SET hue 1` is rejected (`applyParam()` returns false) while `MODE_BEHAVIORAL` is active — an explicit requirement, unlike other mode-irrelevant params which are silently accepted and unused.
 
 ---
 
@@ -45,8 +49,9 @@ Key documents:
 | `hueSensor.h/cpp` | TCS34725 init and readHue() | Done (M3) |
 | `solidMode.h/cpp` | LED hold + button press loop | Done (M2) |
 | `linearMode.h/cpp` | Linear flickering experiment | Done (M4) |
-| `gridMode.h/cpp` | Grid flickering experiment | **TODO M5** |
-| `behavioralMode.h/cpp` | ADC knob behavioral experiment | **TODO M6** |
+| `gridMode.h/cpp` | Grid flickering experiment | Done (M5) |
+| `baselineRunner.h/cpp` | Shared solid baseline display (Linear + Grid) | Done (M5) |
+| `behavioralMode.h/cpp` | ADC knob behavioral experiment | Done (M6) |
 
 ---
 
@@ -72,6 +77,7 @@ Key documents:
 | `trCnt` | volatile int | Trial counter (1+ stim, 1001+ baseline) |
 | `trigFlag` | volatile int | Hardware trigger pin state |
 | `pressFlag` | volatile bool | Set on button/PRESS, cleared after next frame |
+| `guiPressRequest` | volatile bool | Serial `PRESS` in Behavioral mode; consumed by `runBehavioral()` |
 | `halfPeriod` | volatile ulong | µs, derived from freq by updateHalfPeriod() |
 
 ---
@@ -107,7 +113,7 @@ Key documents:
 | `SET CYANLED N` | — | same |
 | Multi-set | `SET REDLED 300, CYANLED 800` | comma-space separated |
 
-Special commands: `PRESS` (Solid + RUNNING only — simulates button press from GUI).
+Special commands: `PRESS` (Solid or Behavioral + RUNNING only — simulates button press from GUI).
 
 ---
 
@@ -118,9 +124,9 @@ Special commands: `PRESS` (Solid + RUNNING only — simulates button press from 
 | M1 | Firmware shared infrastructure | **Done, hardware verified** |
 | M2 | Firmware Sub-mode A (Solid) | **Done, hardware verified** |
 | M3 | Firmware Hue sensor module | **Done, hardware verified** |
-| M4 | Firmware Sub-mode B (Linear) | **Done, ready to flash** |
-| M5 | Firmware Sub-mode C (Grid) | TODO |
-| M6 | Firmware Sub-mode D (Behavioral) | TODO |
+| M4 | Firmware Sub-mode B (Linear) | **Done, hardware verified** |
+| M5 | Firmware Sub-mode C (Grid) | **Done, hardware verified** |
+| M6 | Firmware Sub-mode D (Behavioral) | **Done, ready to flash** |
 | M7 | GUI project setup + serial infrastructure | TODO |
 | M8 | GUI main window + mode selector | TODO |
 | M9 | GUI Sub-mode A view (Solid) | TODO |
@@ -145,15 +151,15 @@ Key difference from subjectExperiment: LED assignments are fully configurable vi
 
 ---
 
-## What M5 (Grid) needs to implement
+## What M5 (Grid) implements
 
-Same as Linear but with two flickering LEDs (LEDA + LEDB), forming a steps×steps grid. Uses the same diagonal boustrophedon traversal as `subjectExperiment/gridExperiment.cpp`, with the `gridOrder` transform. flickerISR drives both LEDA and LEDB simultaneously in the stim phase.
+Same as Linear but with two flickering LEDs (LEDA + LEDB), forming a `steps x steps` grid. Uses the same diagonal boustrophedon traversal as `subjectExperiment/gridExperiment.cpp`, with the `gridOrder` transform (order 2/4 flip the B axis, order 3/4 flip the A axis; order 0 and 1 are both the identity — no distinct meaning defined for 0). `gridFlickerISR` drives both LEDA and LEDB simultaneously in the stim phase, against ref1/2/3 in the reference phase. Sequence is generated in one pass into `seqA[]`/`seqB[]` (max 50x50=2500 entries) rather than precomputing a separate coordinate array. Baselines reuse `baselineRunner::runBaselines()`.
 
 ---
 
-## What M6 (Behavioral) needs to implement
+## What M6 (Behavioral) implements
 
-Like Grid but ADC knobs (PIN_KNOB_A, PIN_KNOB_B) control LEDA and LEDB intensity in real time. Uses anchor-offset knob strategy from `subjectExperiment/behavioralExperiment.cpp`. Button press ends trial and logs response. No hue support. No baselines.
+Same two-phase flicker structure as Grid (stim = LEDA + LEDB + bgStim1 + bgStim2, ref = ref1/2/3), but LEDA/LEDB intensity is driven live by `PIN_KNOB_A`/`PIN_KNOB_B` ADC reads instead of a precomputed step sequence. Anchor-offset knob strategy (`rawFromMapped`/`wrapAdc`/`walkJump`) mirrors `subjectExperiment/behavioralExperiment.cpp`: each trial anchors the knobs' current physical position to a target value, so the participant doesn't need to physically return the knob to an origin between trials. A button press — physical (`Bounce` on `PIN_BUTTON`) or serial `PRESS` (via `guiPressRequest`) — ends the trial, logs the response (`Press=1` on the next FRAME), waits `interTrialWait`, then walks to a new randomized target clamped to the interior margins. No hue support (`SET hue 1` rejected in this mode). No baselines, no fixed trial count or `trialLength` — runs until `STOP`.
 
 ---
 

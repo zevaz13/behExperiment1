@@ -12,8 +12,8 @@
 
 #include "solidMode.h"
 #include "linearMode.h"
-// #include "gridMode.h"      // M5
-// #include "behavioralMode.h" // M6
+#include "gridMode.h"
+#include "behavioralMode.h"
 
 // Experiment thread: waits for started=true, dispatches to mode, then resets.
 void experimentThread() {
@@ -23,8 +23,8 @@ void experimentThread() {
         switch (activeMode) {
             case MODE_SOLID:      runSolid();      break;
             case MODE_LINEAR:     runLinear();     break;
-            // case MODE_GRID:       runGrid();       break;  // M5
-            // case MODE_BEHAVIORAL: runBehavioral(); break;  // M6
+            case MODE_GRID:       runGrid();       break;
+            case MODE_BEHAVIORAL: runBehavioral(); break;
             default:
                 while (started) { threads.yield(); }
                 break;

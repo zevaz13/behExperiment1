@@ -38,6 +38,7 @@ volatile bool started    = false;
 volatile int  trCnt      = 0;
 volatile int  trigFlag   = 0;
 volatile bool pressFlag  = false;
+volatile bool guiPressRequest = false;
 
 IntervalTimer timerFlicker;
 IntervalTimer timerSerial;
@@ -62,6 +63,7 @@ void applyDefaults() {
     baselineLed2 = LED_NONE; baselineLed2Val = 0;
     baselineLed3 = LED_NONE; baselineLed3Val = 0;
     hueEnabled = false;
+    guiPressRequest = false;
     updateHalfPeriod();
 }
 
@@ -100,4 +102,11 @@ bool isValidLedName(const String& s) {
     return s.equalsIgnoreCase("RED")    || s.equalsIgnoreCase("YELLOW") ||
            s.equalsIgnoreCase("GREEN")  || s.equalsIgnoreCase("BLUE")   ||
            s.equalsIgnoreCase("CYAN")   || s.equalsIgnoreCase("NONE");
+}
+
+// True if `val` (a real LED, not NONE) is already assigned to one of the
+// other roles in the same phase group — used to reject same-LED-twice SETs.
+bool ledInUse(LedId val, LedId s1, LedId s2, LedId s3) {
+    if (val == LED_NONE) return false;
+    return val == s1 || val == s2 || val == s3;
 }

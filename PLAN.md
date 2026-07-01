@@ -67,7 +67,7 @@ Root causes identified by reading `linearMode.cpp`, `serialParser.cpp`, `dataFra
    - [x] `globals.h/cpp`: add `LedId baselineLed1, baselineLed2, baselineLed3` (default `LED_NONE`) and `int baselineLed1Val, baselineLed2Val, baselineLed3Val` (default 0, range [0,4095]). Reset in `applyDefaults()`.
    - [x] `serialParser.cpp`: add SET keys `baselineLed1/2/3` (LED name) and `baselineLed1/2/3Val` (int), add to `printGet()`.
    - [x] `linearMode.cpp`: `runBaselines()` drives `baselineLed1/2/3` at their `Val` intensities instead of `ref1/2/3`. `ref1/2/3` remain exclusively used by `linearFlickerISR()`'s reference phase.
-   - [ ] Since Grid/Behavioral (M5/M6) will need the identical baseline behavior, keep `runBaselines()` easy to share (either leave as-is and copy when M5 lands, or lift into a shared helper now — decide at M5 time, not blocking this fix).
+   - [x] Since Grid/Behavioral (M5/M6) will need the identical baseline behavior, keep `runBaselines()` easy to share (either leave as-is and copy when M5 lands, or lift into a shared helper now — decide at M5 time, not blocking this fix). **Done at M5 time**: extracted to `baselineRunner.h/cpp`, used by both `linearMode.cpp` and `gridMode.cpp`.
 
 3. **Frame LEDA/LEDB field redundant with intensity columns.** Per requirements (`requirementsREP.md:133`) and your direction, the frame's `LEDA`/`LEDB` fields should report the *name* of the assigned LED, not its intensity (which is already visible in the matching Red/Yellow/Green/Blue/Cyan column).
    - [x] `dataFrame.cpp`: print `ledIdStr(ledA)` / `ledIdStr(ledB)` instead of `ledVal[ledA]`/`ledVal[ledB]`. Unset stays `"NONE"`.
@@ -83,19 +83,28 @@ Root causes identified by reading `linearMode.cpp`, `serialParser.cpp`, `dataFra
    - [x] Update `tests/test_m4_instructions.md` to use `baselineLed1/baselineLed1Val` instead of `ref1Led/ref1Int` for baseline steps, and to reflect `LEDA`/`LEDB` frame fields now being LED names.
    - [x] Update `docs/prototype2/statusREP.md` SET-commands table and globals reference.
 
-**Status: implemented, awaiting manual hardware verification via `tests/test_m4_instructions.md` (Arduino IDE flash + serial monitor).** `printGetParam()` was left as-is for `baselineLed*` since it already omits the analogous `ref1/2/3Led`/`bgStim*Led` single-param lookups (pre-existing gap, out of scope here) — `GET` (full dump) covers them.
+**Status: hardware verified — all `tests/test_m4_instructions.md` sections passed.** `printGetParam()` was left as-is for `baselineLed*` since it already omits the analogous `ref1/2/3Led`/`bgStim*Led` single-param lookups (pre-existing gap, out of scope here) — `GET` (full dump) covers them.
 
 ### M5 — Firmware: Sub-mode C (Grid)
-Files: `gridMode.h/cpp`, sequence order support.
-Test: script runs 2×2 grid, asserts sequence visits all combinations, verifies baseline numbering.
-- [ ] Implement gridMode
-- [ ] Write serial test script for M5
+Files: `gridMode.h/cpp`, `baselineRunner.h/cpp` (extracted shared baseline logic, now also used by `linearMode.cpp`).
+Test: `tests/test_m5_instructions.md` — manual via Arduino IDE serial monitor.
+- [x] Implement gridMode: two-LED flicker (LEDA+LEDB+bgStim1+bgStim2 stim phase vs. ref1/2/3 ref phase), diagonal boustrophedon `steps x steps` traversal with `gridOrder` transform (order 0 == order 1, matching `subjectExperiment/gridExperiment.cpp`), shared baselines via `baselineRunner`
+- [x] Add LED-uniqueness validation to `serialParser.cpp::applyParam()` (rejects same LED assigned twice within a phase group: stim `LEDA/LEDB/bgStim1/bgStim2`, ref `ref1/2/3`, baseline `baselineLed1/2/3`); applies to both Linear and Grid since the parser is shared
+- [x] Wire `gridMode.h` include + `MODE_GRID` case into `configurableFirmware.ino`
+- [x] Write test instructions for M5
+
+**Status: hardware verified — all `tests/test_m5_instructions.md` sections passed.**
 
 ### M6 — Firmware: Sub-mode D (Behavioral)
 Files: `behavioralMode.h/cpp`, ADC knob control, button press frame.
-Test: script verifies frame output; button press and ADC behavior verified manually.
-- [ ] Implement behavioralMode
-- [ ] Write serial test script for M6
+Test: `tests/test_m6_instructions.md` — manual via Arduino IDE serial monitor; button press and ADC behavior verified manually.
+- [x] Implement behavioralMode: two-phase flicker (stim `LEDA/LEDB` live knob values + `bgStim1/2` vs. ref `ref1/2/3`), anchor-offset knob strategy mirroring `subjectExperiment/behavioralExperiment.cpp` (`rawFromMapped`/`wrapAdc`/`walkJump`, interior-margin start and walk clamp), no baselines, no fixed trial count, runs until STOP
+- [x] Physical button (`Bounce` on `PIN_BUTTON`) and serial `PRESS` both end the trial identically, via a new `guiPressRequest` flag consumed by `runBehavioral()` (serial parsing and the experiment loop run on different TeensyThreads threads, so `PRESS` can't call the trial-advance logic directly)
+- [x] `SET hue 1` rejected while `MODE_BEHAVIORAL` is active (explicit requirement — hue not supported in this mode), reusing the same `applyParam()` false-return path as the other validations
+- [x] Wire `behavioralMode.h` include + `MODE_BEHAVIORAL` case into `configurableFirmware.ino`
+- [x] Write test instructions for M6
+
+**Status: implemented, awaiting manual hardware verification via `tests/test_m6_instructions.md`.**
 
 ### M7 — GUI: project setup + serial infrastructure
 Files: `pyproject.toml` (uv), `main.py`, `serial_link.py`, `protocol.py`

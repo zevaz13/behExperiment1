@@ -96,25 +96,28 @@ static bool applyParam(const String& p, const String& v) {
     else if (p == "minA")         { minA = constrain(v.toInt(), 0, 4095); }
     else if (p == "maxB")         { maxB = constrain(v.toInt(), 0, 4095); }
     else if (p == "minB")         { minB = constrain(v.toInt(), 0, 4095); }
-    else if (p == "LEDA")         { if (!isValidLedName(v)) return false; ledA = parseLedId(v); }
-    else if (p == "LEDB")         { if (!isValidLedName(v)) return false; ledB = parseLedId(v); }
-    else if (p == "bgStim1Led")   { if (!isValidLedName(v)) return false; bgStim1Led = parseLedId(v); }
+    // LED-role params: reject unknown names and duplicate LEDs within the same phase
+    // group (stim: LEDA/LEDB/bgStim1/bgStim2; ref: ref1/2/3; baseline: baselineLed1/2/3).
+    // Cross-phase reuse (e.g. RED for both baseline and stim) is allowed.
+    else if (p == "LEDA")         { if (!isValidLedName(v)) return false; LedId nv = parseLedId(v); if (ledInUse(nv, ledB, bgStim1Led, bgStim2Led)) return false; ledA = nv; }
+    else if (p == "LEDB")         { if (!isValidLedName(v)) return false; LedId nv = parseLedId(v); if (ledInUse(nv, ledA, bgStim1Led, bgStim2Led)) return false; ledB = nv; }
+    else if (p == "bgStim1Led")   { if (!isValidLedName(v)) return false; LedId nv = parseLedId(v); if (ledInUse(nv, ledA, ledB, bgStim2Led)) return false; bgStim1Led = nv; }
     else if (p == "bgStim1Int")   { bgStim1Int = constrain(v.toInt(), 0, 4095); }
-    else if (p == "bgStim2Led")   { if (!isValidLedName(v)) return false; bgStim2Led = parseLedId(v); }
+    else if (p == "bgStim2Led")   { if (!isValidLedName(v)) return false; LedId nv = parseLedId(v); if (ledInUse(nv, ledA, ledB, bgStim1Led)) return false; bgStim2Led = nv; }
     else if (p == "bgStim2Int")   { bgStim2Int = constrain(v.toInt(), 0, 4095); }
-    else if (p == "ref1Led")      { if (!isValidLedName(v)) return false; ref1Led = parseLedId(v); }
+    else if (p == "ref1Led")      { if (!isValidLedName(v)) return false; LedId nv = parseLedId(v); if (ledInUse(nv, ref2Led, ref3Led)) return false; ref1Led = nv; }
     else if (p == "ref1Int")      { ref1Int = constrain(v.toInt(), 0, 4095); }
-    else if (p == "ref2Led")      { if (!isValidLedName(v)) return false; ref2Led = parseLedId(v); }
+    else if (p == "ref2Led")      { if (!isValidLedName(v)) return false; LedId nv = parseLedId(v); if (ledInUse(nv, ref1Led, ref3Led)) return false; ref2Led = nv; }
     else if (p == "ref2Int")      { ref2Int = constrain(v.toInt(), 0, 4095); }
-    else if (p == "ref3Led")      { if (!isValidLedName(v)) return false; ref3Led = parseLedId(v); }
+    else if (p == "ref3Led")      { if (!isValidLedName(v)) return false; LedId nv = parseLedId(v); if (ledInUse(nv, ref1Led, ref2Led)) return false; ref3Led = nv; }
     else if (p == "ref3Int")      { ref3Int = constrain(v.toInt(), 0, 4095); }
-    else if (p == "baselineLed1")    { if (!isValidLedName(v)) return false; baselineLed1 = parseLedId(v); }
+    else if (p == "baselineLed1")    { if (!isValidLedName(v)) return false; LedId nv = parseLedId(v); if (ledInUse(nv, baselineLed2, baselineLed3)) return false; baselineLed1 = nv; }
     else if (p == "baselineLed1Val") { baselineLed1Val = constrain(v.toInt(), 0, 4095); }
-    else if (p == "baselineLed2")    { if (!isValidLedName(v)) return false; baselineLed2 = parseLedId(v); }
+    else if (p == "baselineLed2")    { if (!isValidLedName(v)) return false; LedId nv = parseLedId(v); if (ledInUse(nv, baselineLed1, baselineLed3)) return false; baselineLed2 = nv; }
     else if (p == "baselineLed2Val") { baselineLed2Val = constrain(v.toInt(), 0, 4095); }
-    else if (p == "baselineLed3")    { if (!isValidLedName(v)) return false; baselineLed3 = parseLedId(v); }
+    else if (p == "baselineLed3")    { if (!isValidLedName(v)) return false; LedId nv = parseLedId(v); if (ledInUse(nv, baselineLed1, baselineLed2)) return false; baselineLed3 = nv; }
     else if (p == "baselineLed3Val") { baselineLed3Val = constrain(v.toInt(), 0, 4095); }
-    else if (p == "hue")          { hueEnabled = (v.toInt() != 0); }
+    else if (p == "hue")          { if (activeMode == MODE_BEHAVIORAL) return false; hueEnabled = (v.toInt() != 0); }
     // Solid-mode direct LED values — also applied live if running solid
     else if (p == "REDLED")    { int val = constrain(v.toInt(), 0, 4095); ledVal[LED_RED]    = val; if (activeMode == MODE_SOLID && fwState == STATE_RUNNING) analogWrite(PIN_RED,    val); }
     else if (p == "YELLOWLED") { int val = constrain(v.toInt(), 0, 4095); ledVal[LED_YELLOW] = val; if (activeMode == MODE_SOLID && fwState == STATE_RUNNING) analogWrite(PIN_YELLOW, val); }
@@ -187,6 +190,7 @@ static void handleStart() {
     trCnt    = 0;
     trigFlag = 0;
     pressFlag = false;
+    guiPressRequest = false;
     started  = true;
     fwState  = STATE_RUNNING;
     Serial.println("OK START");
@@ -252,14 +256,18 @@ void handleSerial() {
         return;
     }
 
-    // PRESS — GUI-side button press (Solid mode only, while running)
+    // PRESS — GUI-side button press (Solid or Behavioral mode only, while running)
     if (cmd.equalsIgnoreCase("PRESS")) {
         if (fwState == STATE_RUNNING && activeMode == MODE_SOLID) {
             trCnt++;
             pressFlag = true;
             Serial.println("OK PRESS");
+        } else if (fwState == STATE_RUNNING && activeMode == MODE_BEHAVIORAL) {
+            // Consumed by runBehavioral(), which mirrors the physical button path
+            guiPressRequest = true;
+            Serial.println("OK PRESS");
         } else {
-            Serial.println("ERR PRESS only valid in SOLID mode while running");
+            Serial.println("ERR PRESS only valid in SOLID or BEHAVIORAL mode while running");
         }
         return;
     }

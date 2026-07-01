@@ -54,6 +54,7 @@ extern volatile bool started;
 extern volatile int  trCnt;
 extern volatile int  trigFlag;
 extern volatile bool pressFlag;  // cleared after each frame that includes it
+extern volatile bool guiPressRequest;  // GUI-simulated PRESS in Behavioral mode; consumed by runBehavioral()
 
 // ── Hardware timers ───────────────────────────────────────────────────────
 extern IntervalTimer timerFlicker;
@@ -66,5 +67,6 @@ int  ledPin(LedId id);
 const char* ledIdStr(LedId id);
 LedId parseLedId(const String& s);
 bool  isValidLedName(const String& s);
+bool  ledInUse(LedId val, LedId s1, LedId s2, LedId s3 = LED_NONE);
 
 #endif
