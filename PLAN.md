@@ -10,7 +10,7 @@ Output paths:
 - GUI: `prototype2/GUI/configurableFirmware/`
 
 ### Testing convention
-- Firmware: Python serial test scripts (you flash, run scripts, then verify behavior manually)
+- Firmware: manual test instruction files (`tests/test_mN_instructions.md`) run via Arduino IDE serial monitor
 - GUI: offscreen tests + mock serial link
 
 ---
@@ -20,14 +20,14 @@ Output paths:
 ### M1 — Firmware: shared infrastructure
 Files: `globals.h/cpp`, `pinDefs.h`, `ledControl.h/cpp`, `serialParser.h/cpp`, `dataFrame.h/cpp`, `timerManager.h/cpp`, skeleton `configurableFirmware.ino`
 Test: script verifies `MODE` command accepted, `GET` returns defaults, data frame arrives every ~100ms.
-- [ ] Implement shared modules
-- [ ] Write serial test script for M1
+- [x] Implement shared modules
+- [x] Write serial test script for M1 (`tests/test_m1.py`)
 
 ### M2 — Firmware: Sub-mode A (Solid)
 Files: `solidMode.h/cpp`, full FSM, real-time LED commands in RUNNING state.
-Test: script sets mode, sends `SET` commands, asserts frame values match, verifies `STOP` resets state.
-- [ ] Implement solidMode
-- [ ] Write serial test script for M2
+Test: `tests/test_m2_instructions.md` — manual via Arduino IDE serial monitor.
+- [x] Implement solidMode
+- [x] Write test instructions for M2
 
 ### M3 — Firmware: Hue sensor module
 Files: `hueSensor.h/cpp`. Returns `-99` fields when absent; returns error on `START` with `hue=true` if not detected.
