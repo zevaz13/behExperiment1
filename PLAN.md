@@ -194,3 +194,13 @@ Test: offscreen test verifies plot and table update on simulated frames.
 - [x] Added offscreen test for the Behavioral config save/load round-trip.
 
 **Status: implemented, all 47 `test_offscreen.py` tests pass. The 0,0 press fix is in firmware — needs reflash + hardware retest (see M6 test file section 7) to confirm.**
+### M12.2 Issues behavioral test
+- Upon push-button pressing, the marker is placed in the right location. However, the value appended to the table is 0,0. 
+- The median cannot be tested as it is always 0,0. It is well placed in the plot.
+
+**Root cause**: the marker's "right location" was misleading — it's updated continuously by *every* frame, so it quickly reflects the next trial's live knob position regardless of what the specific `Press=1` frame carried. The table/median read their value from that same `Press=1` frame's own LED columns, and on real hardware those still arrived zeroed despite the M12.1 firmware fix (the exact remaining race wasn't reproducible from here without hardware access). Fixed on the GUI side instead, since it can be made correct independent of the firmware's exact timing: `behavioral_view.py` now caches the last *live* (non-press) LEDA/LEDB reading, and on a `Press=1` frame only falls back to that cache if the frame's own values are both exactly 0 (the signature of `allLedsOff()` having already zeroed both LEDs) — a press frame carrying real, possibly fresher, values is still trusted directly.
+
+- [x] `behavioral_view.py`: cache `_last_live_a`/`_last_live_b` from every non-press frame; use them for the marker/table/median only when the press frame's own values are both exactly 0.
+- [x] Added offscreen tests for both cases: zeroed press frame falls back to the cached value; non-zero press frame is trusted directly (regression guard for the M9-era test).
+
+**Status: implemented, all 49 `test_offscreen.py` tests pass. This fix is GUI-only (no reflash needed) — should resolve the issue immediately once you pull the updated `behavioral_view.py`.**

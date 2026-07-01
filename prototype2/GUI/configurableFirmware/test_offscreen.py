@@ -724,6 +724,44 @@ def test_behavioral_config_save_load_round_trip():
     print("  [OK] Behavioral config save/load round-trips form values")
 
 
+def test_behavioral_press_falls_back_to_last_live_value_when_zeroed():
+    """M12.2: on real hardware the firmware's allLedsOff() sometimes races the
+    press-event frame, so it arrives reporting (0, 0) instead of the pressed
+    intensities. The press table/median must fall back to the last live
+    (pre-press) reading in that case rather than recording (0, 0)."""
+    w, fake = _navigate_to_config("BEHAVIORAL")
+    w._behavioral_config_page._form._widgets["LEDA"].setCurrentText("RED")
+    w._behavioral_config_page._form._widgets["LEDB"].setCurrentText("GREEN")
+    w._behavioral_config_page.start_requested.emit()
+    session = w._behavioral_session_page
+
+    fake.inject(_frame(red=1500, green=1000, leda="RED", ledb="GREEN"))
+    fake.inject(_frame(red=0, green=0, leda="RED", ledb="GREEN", press=1))  # zeroed race
+
+    assert session._table.rowCount() == 1
+    row = [session._table.item(0, c).text() for c in range(3)]
+    assert row == ["1", "1500", "1000"], f"Expected last live value (1500, 1000), got {row}"
+    assert session._median_label.text() == "Median  RED: 1500  GREEN: 1000"
+    print("  [OK] Behavioral press falls back to the last live reading when the press frame is zeroed")
+
+
+def test_behavioral_press_uses_fresh_values_when_not_zeroed():
+    """A press frame carrying real (non-zero) values is trusted directly, since it
+    may be fresher than the last periodic (up to 100ms old) live sample."""
+    w, fake = _navigate_to_config("BEHAVIORAL")
+    w._behavioral_config_page._form._widgets["LEDA"].setCurrentText("RED")
+    w._behavioral_config_page._form._widgets["LEDB"].setCurrentText("GREEN")
+    w._behavioral_config_page.start_requested.emit()
+    session = w._behavioral_session_page
+
+    fake.inject(_frame(red=1500, green=1000, leda="RED", ledb="GREEN"))
+    fake.inject(_frame(red=1650, green=1120, leda="RED", ledb="GREEN", press=1))
+
+    row = [session._table.item(0, c).text() for c in range(3)]
+    assert row == ["1", "1650", "1120"], f"Expected the press frame's own fresh values, got {row}"
+    print("  [OK] Behavioral press trusts non-zero press-frame values directly")
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -776,6 +814,8 @@ TESTS = [
     test_behavioral_press_button_sends_press,
     test_behavioral_back_sends_stop,
     test_behavioral_config_save_load_round_trip,
+    test_behavioral_press_falls_back_to_last_live_value_when_zeroed,
+    test_behavioral_press_uses_fresh_values_when_not_zeroed,
 ]
 
 

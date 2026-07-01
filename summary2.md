@@ -268,3 +268,34 @@ Comparison of the grid stimulus ordering between prototype1 (`prototype/firmware
 - **Prototype2 (before fix)** — unidirectional: every diagonal walked the same way, jumping back across the grid at each diagonal boundary.
 
 The order-flip convention (order 2 flips Y, 3 flips X, 4 flips both) already matched; only the diagonal direction differed. `buildDiagonalCoords` was rewritten to the boustrophedon traversal (even diagonal sum: index descending; odd: ascending — parity matched to prototype1's `d = (x-1)+(y-1)+2`). Verified in Python that prototype2 now reproduces prototype1's full 100-stimulus sequence exactly for all four orders. The GUI is unaffected — it infers grid positions from the streamed LED values, not from traversal order.
+
+---
+
+## Configurable Firmware + GUI — Rapid Experiment Prototyping Tool (M1-M12, complete)
+
+**Session:** 2026-07-01
+**Output:** `prototype2/Firmware/configurableFirmware/` (firmware, M1-M6) and `prototype2/GUI/configurableFirmware/` (GUI, M7-M12)
+**Status:** All 12 milestones done. Firmware hardware-verified on Teensy 4.0 across all 4 sub-modes. GUI hardware-tested through several fix rounds; full command/protocol/architecture reference lives in `docs/prototype2/statusREP.md`, milestone-by-milestone checklists and issue write-ups in `PLAN.md` — this section is a narrative pointer, not a duplicate.
+
+Where subjectExperiment (above) hardcoded two fixed color pairs and two fixed modes, this deliverable makes every LED role (primary/secondary sweep, background x2, reference x3, baseline x3) independently assignable at runtime via a `MODE`/`SET`/`GET`/`START`/`STOP`/`PRESS` serial protocol, across four sub-modes: **Solid** (manual sliders), **Linear** (single-LED step sweep), **Grid** (two-LED step x step sweep), **Behavioral** (knob-driven, open-ended). Optional TCS34725 hue sensor support in Solid/Linear/Grid (not Behavioral).
+
+### Firmware (M1-M6)
+
+Shared infra (state machine, `ledVal[5]` indexed by `LedId`, timers, serial parser) then one file per sub-mode, mirroring `subjectExperiment`'s module split. `baselineRunner.h/cpp` was extracted at M5 so Linear and Grid share one baseline implementation instead of copy-pasting it (Behavioral doesn't use baselines). Behavioral's anchor-offset knob strategy and press/ITI/walk cycle port `subjectExperiment/behavioralExperiment.cpp`'s logic almost directly, generalized from fixed color pairs to configurable `LEDA`/`LEDB`.
+
+**M4.1 — the formative bug.** Early hardware testing of Linear mode produced "nothing happened" despite trial counting working. Root cause: `parseLedId()` silently mapped any unrecognized LED-name string to `LED_NONE` with no error, so a single missing comma in a multi-`SET` command merged two params into one garbled value and quietly zeroed out `LEDA` — the firmware reported `OK SET` the whole time. Same session also surfaced that baseline trials and the flicker's reference phase were incorrectly sharing the same `ref1/2/3Led` config (now split into independent `baselineLed1/2/3`), and that the data frame's `LEDA`/`LEDB` fields duplicated intensity already visible in the color columns instead of reporting the assigned LED's name. Fixing "reject invalid LED names instead of silently defaulting" became the template applied again at M5 (LED-uniqueness-per-phase validation) — both live in `serialParser.cpp::applyParam()`, shared by every mode.
+
+### GUI (M7-M12)
+
+Same stack as `GUIsubjectExp` (PySide6 + pyqtgraph + pyserial, `uv`), rebuilt around the new protocol: `ConnectPage` -> `ModeSelectPage` -> per-mode config screen (Linear/Grid/Behavioral only — Solid auto-starts with `MODE`+`START` sent immediately, no config step) -> session screen. `param_form.py`'s `ParamForm` widget (built at M10) turned out reusable across Linear, Grid, and Behavioral's config screens, saving three near-duplicate form implementations.
+
+One protocol gap worth remembering: the new firmware has **no `DONE` sentinel line** (the old subjectExperiment protocol had one). Linear/Grid progress bars therefore track a *set of distinct `TrialNumber`s seen* rather than detecting changes between consecutive frames — change-detection would never count the final trial, since there's no "next" trial to detect the change against.
+
+**Fix rounds, in order** (each triggered by you running the actual GUI against hardware):
+- **M9.1** — Solid's hue bar plot used pyqtgraph's default auto-range, which re-tweens the view on every 100ms frame; looked like the bars never stopped moving, and the axis-label-width churn dragged the slider column's rendered size around too. Fixed with a locked Y-range plus a manual "hue scale max" spinbox.
+- **M9.2** — even with M9.1 fixed, dragging a slider still felt laggy: every `valueChanged` tick sent its own `SET`, flooding the link. Debounced slider->`SET` to ~100ms after motion stops, and throttled the hue plot's redraw to ~300ms instead of every frame.
+- **M11.1** — hue data logging was unconditional whenever hue was on, which wasn't always wanted; added an opt-in "Save hue data to file" checkbox. Also added `format_led_assignments()` so the session summary line lists every non-NONE background/reference/baseline LED, not just LEDA/LEDB.
+- **M12.1** — three issues from a hardware pass: GUI now launches maximized; Behavioral config gained load/save (`beh_configparams_<timestamp>.json`); and a real firmware bug where `behavioralMode.cpp`'s `allLedsOff()` zeroed the pressed LED values before the async 100ms frame timer could report them, so every press logged (0,0) — fixed by forcing the press-event frame out synchronously before the zeroing.
+- **M12.2** — the M12.1 firmware fix didn't fully close the race on real hardware (press table/median still showed 0,0, even though the live marker looked fine — it's continuously updated by every frame, so it was just showing the *next* trial's position by the time you looked). Fixed on the GUI side instead, independent of the exact firmware timing: `BehavioralSessionPage` now caches the last live (non-press) LEDA/LEDB reading and only substitutes it when a press frame's own values are suspiciously both exactly 0.
+
+Offscreen test suite (`test_offscreen.py`, `FakeSerialLink`, `QT_QPA_PLATFORM=offscreen`) grew from the M7 protocol-only tests to 49 tests covering every page's navigation, form round-tripping, and the specific race conditions above — run via `UV_PROJECT_ENVIRONMENT=.venv-linux uv run python test_offscreen.py` from `prototype2/GUI/configurableFirmware/`. Real serial I/O can't be exercised from WSL, so every hardware-dependent claim in this section was verified by you on Windows, not by the agent.

@@ -126,11 +126,12 @@ TriggerCue@TrialNumber@Red@Yellow@Green@Blue@Cyan@HUE_R@HUE_G@HUE_B@HUE_CT@HUE_L
 ### File layout
 
 ```
-main.py              — entry point
+main.py              — entry point (launches maximized)
 main_window.py       — top-level window, mode selector, screen switching
 serial_link.py       — serial read/write thread, frame parsing
 protocol.py          — command builders (SET, GET, MODE, START, STOP)
 config_io.py         — JSON save/load of experiment parameters
+param_form.py        — shared config form widget (Linear/Grid/Behavioral) + LED_FRAME_KEY, format_led_assignments()
 solid_view.py        — Sub-mode A UI
 linear_view.py       — Sub-mode B UI
 grid_view.py         — Sub-mode C UI
@@ -145,7 +146,8 @@ Main window opens on a mode-selector screen. Choosing a mode sends `MODE X` to t
 
 - 5 vertical sliders side by side, one per LED, with a color swatch and editable value box
 - LED colors: Red `#f70404`, Yellow `#fabd04`, Green `#b1ff01`, Blue `#0493ff`, Cyan `#50fefe`
-- Right panel shows hue sensor R/G/B bar plots (only if hue sensor active)
+- Right panel shows hue sensor R/G/B bar plots (only if hue sensor active); fixed Y-range with an adjustable "hue scale max" spinbox rather than auto-scaling, which visibly lagged/re-tweened on every incoming frame (M9.1)
+- Slider -> `SET` sends are debounced (~100ms after motion stops) to avoid flooding the serial link during a drag; the hue plot itself redraws on a throttled ~300ms timer rather than per 100ms frame (M9.2)
 - Button press (physical or GUI) triggers a full data frame with `Press=1`
 - No config save/load
 
@@ -153,24 +155,27 @@ Main window opens on a mode-selector screen. Choosing a mode sends `MODE X` to t
 
 - Config screen: all Linear parameters, hue toggle, load/save (filename prefix `linearParamConfig_`)
 - Experiment screen: progress bar, current/total repetition label, key config summary at bottom
-- Hue plots (optional, shown only if hue active): cumulative R/G/B channels on one plot; mean R/G/B per step on a second plot
-- Data saved as `linearhue_exp_<timestamp>.txt` when hue is active (all frames logged)
+- Hue plots (optional, shown only if hue active): cumulative R/G/B channels on one plot (growing per-frame time series, auto-ranging Y); mean R/G/B per step on a second plot (one point per completed stimulus trial, baselines excluded)
+- Data saving is opt-in (M11.1): a "Save hue data to file" checkbox (unchecked by default, enabled only once hue is checked) — only when both are checked does Start prompt for a `linearhue_exp_<timestamp>.txt` path and log every frame while hue is active
+- Config summary also lists every non-NONE background/reference/baseline LED with its phase and value (`format_led_assignments()`, M11.1), not just LEDA
 - LED referred to as `LEDA (<selected LED name>)` in labels
 
 ### Sub-mode C — Grid view
 
 - Config screen: all Grid parameters, hue toggle, load/save (filename prefix `gridParamConfig_`)
 - Experiment screen: progress bar, current/total repetition label, key config summary at bottom
-- Grid plot showing visited and current points (x = LEDA, y = LEDB), axes labeled `LEDA (<name>)` / `LEDB (<name>)`
+- Grid plot showing visited and current points (x = LEDA, y = LEDB), axes labeled `LEDA (<name>)` / `LEDB (<name>)`; position only updates on `Trigger=1` frames of non-baseline trials so the ITI's zeroed LEDs never drag the marker to (0,0)
 - Hue plots (optional, shown only if hue active): same layout as Linear
-- Data saved as `gridhue_exp_<timestamp>.txt` when hue is active
+- Data saving is opt-in (M11.1), same "Save hue data to file" checkbox pattern as Linear: `gridhue_exp_<timestamp>.txt` only when both hue and the checkbox are checked
+- Config summary also lists every non-NONE background/reference/baseline LED with its phase and value, same as Linear
 
 ### Sub-mode D — Behavioral view
 
-- Config screen: all Behavioral parameters (no hue)
+- Config screen: all Behavioral parameters (no hue), with load/save (`beh_configparams_<timestamp>.json`, M12.1)
 - Experiment screen: real-time scatter plot of LEDA vs. LEDB intensity, axes labeled with LED names
-- Button press appends a row to a table on the right; rolling median shown on screen
-- Data save deferred to a later milestone
+- GUI Press button sends `PRESS` directly, identical effect to the physical button
+- Button press appends a row to a table on the right; rolling median shown on screen. Since the firmware may already have zeroed the LEDs by the time a press-event frame is generated (a race with `allLedsOff()`), the table/median fall back to the last live (pre-press) reading whenever a press frame's own values are both exactly 0 (M12.2)
+- Data save (of press results to a file) deferred to a later milestone — config save/load above is unrelated and already done
 
 ### Shared UI behavior
 

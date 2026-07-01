@@ -10,8 +10,10 @@ Two generations of hardware are in this repo. Prototype 1 is complete and was us
 
 ```
 prototype2/
-  Firmware/subjectExperiment/   subjectExperiment firmware (Teensy 4.0) — COMPLETE, hardware-verified
-  GUI/                          subjectExperiment GUI (Python, uv) — next milestone (M2)
+  Firmware/subjectExperiment/      subjectExperiment firmware (Teensy 4.0) — COMPLETE, hardware-verified
+  GUIsubjectExp/                   subjectExperiment GUI (Python, uv) — COMPLETE, hardware-verified
+  Firmware/configurableFirmware/   Rapid Experiment Prototyping Tool firmware — COMPLETE, hardware-verified
+  GUI/configurableFirmware/        Rapid Experiment Prototyping Tool GUI (Python, uv) — COMPLETE, hardware-tested
 
 prototype/
   firmware/knobsBehavioral/     behavioral firmware, prototype1 (reference)
@@ -92,11 +94,33 @@ For complete test procedures see `prototype2/Firmware/subjectExperiment/testingM
 
 ### GUI — subjectExperiment
 
-Not yet implemented (M2). Target: `prototype2/GUI/subjectExperiment/`
+Complete, hardware-verified. `prototype2/GUIsubjectExp/`
 
 Stack: Python, PySide6 + pyqtgraph + pyserial, managed with `uv`. Must run on native Windows (Teensy enumerates as a COM port that WSL2 cannot see without passthrough).
 
-If developing from WSL/Linux, set `UV_PROJECT_ENVIRONMENT=.venv-linux` to avoid colliding with the Windows venv.
+```
+cd prototype2/GUIsubjectExp
+uv run python main.py          # Windows
+```
+
+If developing/testing from WSL/Linux, set `UV_PROJECT_ENVIRONMENT=.venv-linux` to avoid colliding with the Windows venv. Offscreen tests: `UV_PROJECT_ENVIRONMENT=.venv-linux uv run python test_offscreen.py`.
+
+---
+
+### Firmware + GUI — configurableFirmware (Rapid Experiment Prototyping Tool)
+
+A second-generation deliverable that replaces fixed experiment modes with a firmware you configure at runtime over serial — four sub-modes (Solid, Linear, Grid, Behavioral), any of the 5 LEDs assignable to any role (primary/secondary sweep, background, reference, baseline), optional hue sensor. Built to let a researcher prototype new stimulus designs without reflashing.
+
+**Firmware** — `prototype2/Firmware/configurableFirmware/`. Same build setup as subjectExperiment (Arduino IDE + Teensyduino, Teensy 4.0, `TeensyThreads`/`Bounce`/`IntervalTimer`). Sketch: `configurableFirmware.ino`. Serial protocol: `MODE`, `SET`, `GET`, `START`, `STOP`, `PRESS` (38400 baud) — full command reference, globals, and per-mode behavior in [`docs/prototype2/statusREP.md`](docs/prototype2/statusREP.md). Manual test procedures per milestone: `prototype2/Firmware/configurableFirmware/tests/test_mN_instructions.md`.
+
+**GUI** — `prototype2/GUI/configurableFirmware/`. Same stack as GUIsubjectExp (PySide6 + pyqtgraph + pyserial via `uv`), one view per sub-mode plus JSON config save/load.
+
+```
+cd prototype2/GUI/configurableFirmware
+uv run python main.py          # Windows
+```
+
+If developing/testing from WSL/Linux, set `UV_PROJECT_ENVIRONMENT=.venv-linux`. Offscreen tests: `UV_PROJECT_ENVIRONMENT=.venv-linux uv run python test_offscreen.py`.
 
 ---
 
@@ -115,11 +139,11 @@ For docs: `docs/prototype1/`
 
 ## Status
 
-| Milestone | Status |
+| Deliverable | Status |
 |-----------|--------|
-| M1 — subjectExperiment Firmware | Hardware-verified, complete |
-| M2 — subjectExperiment GUI | Not started |
-| M3 — Configurable Firmware | Not started |
-| M4 — Configurable Firmware GUI | Not started |
+| subjectExperiment Firmware | Hardware-verified, complete |
+| subjectExperiment GUI | Hardware-verified, complete |
+| configurableFirmware (Rapid Experiment Prototyping Tool) — Firmware | Hardware-verified, complete (all 4 sub-modes: Solid, Linear, Grid, Behavioral) |
+| configurableFirmware — GUI | Complete, hardware-tested (all 4 sub-mode views + config save/load) |
 
-See [PLAN.md](PLAN.md) for detailed milestone checklists and [summary2.md](summary2.md) for session notes and architecture context.
+See [PLAN.md](PLAN.md) for detailed milestone checklists, [docs/prototype2/statusREP.md](docs/prototype2/statusREP.md) for the current architecture/protocol reference, and [summary2.md](summary2.md) for session notes and history.

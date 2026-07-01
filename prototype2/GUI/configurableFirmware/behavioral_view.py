@@ -119,6 +119,8 @@ class BehavioralSessionPage(QWidget):
         self._press_a: list[int] = []
         self._press_b: list[int] = []
         self._press_count = 0
+        self._last_live_a: int | None = None
+        self._last_live_b: int | None = None
 
         self._params_label = QLabel("")
         self._params_label.setWordWrap(True)
@@ -177,6 +179,8 @@ class BehavioralSessionPage(QWidget):
         self._press_a.clear()
         self._press_b.clear()
         self._press_count = 0
+        self._last_live_a = None
+        self._last_live_b = None
         self._current_marker.setData([], [])
         self._press_marks.setData([], [])
         self._median_marker.setData([], [])
@@ -229,6 +233,20 @@ class BehavioralSessionPage(QWidget):
         if a_key is None or b_key is None:
             return
         a_val, b_val = frame[a_key], frame[b_key]
+
+        if frame["Press"] == 1:
+            # The firmware may have already zeroed the LEDs (allLedsOff() runs right
+            # after the press is detected) by the time this particular frame was
+            # generated, reporting (0, 0) instead of the pressed intensities. allLedsOff()
+            # zeroes both LEDs together, so "both exactly 0" is that corruption's
+            # signature — fall back to the last live (pre-press) reading in that case,
+            # but otherwise trust this frame's own values since they may be fresher
+            # than the last periodic (up to 100ms old) live sample.
+            if a_val == 0 and b_val == 0 and self._last_live_a is not None and self._last_live_b is not None:
+                a_val, b_val = self._last_live_a, self._last_live_b
+        else:
+            self._last_live_a, self._last_live_b = a_val, b_val
+
         self._current_marker.setData([a_val], [b_val])
 
         if frame["Press"] == 1:
