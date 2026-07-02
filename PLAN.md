@@ -249,3 +249,74 @@ Test: offscreen test verifies plot and table update on simulated frames.
 - [x] `test_offscreen.py`: replaced the now-obsolete compact-window-size tests with `test_all_pages_are_maximized`; no other test changes (per instruction to minimize use of this suite — a separate one-off script and `py_compile` were used to verify the new code instead of running the full suite).
 
 **Status: implemented this session, not yet hardware-tested.**
+
+### M14 — GUI: config screen redesign (stages, labels, visuals)
+
+Design spec: `docs/superpowers/specs/2026-07-02-config-screen-redesign-design.md`
+(brainstormed and approved; read it before starting — this checklist summarizes it).
+
+Files: `param_form.py` (most of the work), `solid_view.py`, `linear_view.py`,
+`grid_view.py`, `behavioral_view.py`, `test_offscreen.py`, `docs/prototype2/statusREP.md`.
+
+Reorganizes the Linear/Grid/Behavioral config screens from one flat list of
+firmware-named fields into stage-grouped sections (Timing/Stimulus/Reference/
+Baseline/Hue/Saving) with friendly labels, LED color swatches, a live stim-vs-
+reference phase diagram, cross-field LED exclusion filtering, and a proper
+"Saving" section replacing the Start-time popup dialogs. Firmware/protocol
+unchanged — GUI-only. `main_window.py` should need no changes (the `ParamForm`
+round-trip contract — `values()`/`set_values()`/`changed_values()` — stays the
+same signature throughout).
+
+- [ ] `param_form.py`: add `ParamMeta`, enrich `PARAM_SPEC` with `label`/`unit`/
+      `stage`/`exclusion_group` for every key; move `LED_COLORS` here from
+      `solid_view.py` (single source of truth).
+- [ ] `param_form.py`: add `RANGE_PAIRS` (`minA`/`maxA`, `minB`/`maxB`); reuse the
+      existing `_LED_PHASE_FIELDS` table for LED+intensity row pairing; rework
+      `ParamForm.__init__` to build one `QGroupBox` per stage (only for stages the
+      mode's key list actually has fields in), rendering paired rows as a single
+      row. `values()`/`set_values()`/`changed_values()` signatures and behavior
+      must not change — widgets stay registered per-key exactly as today.
+- [ ] `param_form.py`: add a color-swatch `QLabel` next to every LED dropdown; add
+      a `values_changed` signal (re-emitted from every child widget's change
+      signal); add cross-dropdown exclusion-group filtering (`stim`: LEDA/LEDB/
+      bgStim1Led/bgStim2Led, `reference`: ref1/2/3Led, `baseline`: baselineLed1/2/3)
+      via `QStandardItemModel` item-flag disabling (never remove items, never
+      disable "NONE" or a combo's own current value) — run once after
+      `set_values()` and again on every `values_changed`.
+- [ ] `param_form.py`: special-case `order` as a 4-item named dropdown ("Standard",
+      "Flip LEDB axis", "Flip LEDA axis", "Flip both axes") mapped to firmware
+      values `{1,2,3,4}` — drop `0` from the UI (confirmed identical to `1` in
+      `gridMode.cpp`).
+- [ ] `param_form.py`: new `PhaseDiagram` widget — two labeled panels ("Stim"/
+      "Reference") with colored role chips built from current form values,
+      refreshed on `values_changed`. No Baseline diagram (own group box is
+      sufficient there).
+- [ ] `param_form.py`: new `SavingSection` widget (Linear/Grid only) — experiment
+      name field, existing "Save hue data to file" checkbox, destination path
+      display + "Choose file..." button. No dialogs pop up at Start anymore; an
+      unset destination silently falls back to the default
+      `<mode>hue_exp_<name>_<timestamp>.txt` path in the working directory.
+- [ ] `solid_view.py`: import `LED_COLORS` from `param_form` instead of a local copy.
+- [ ] `linear_view.py` / `grid_view.py`: add `PhaseDiagram` + `SavingSection` to
+      `LinearConfigPage`/`GridConfigPage`'s layout; remove the `QInputDialog`/
+      `QFileDialog`-at-Start flow from `_on_start()`, reading the destination from
+      `SavingSection` instead (`hue_log_path()` keeps its existing signature).
+- [ ] `behavioral_view.py`: add a `PhaseDiagram` to `BehavioralConfigPage` (no
+      `SavingSection` — this mode doesn't save experiment data); confirm the
+      stage-grouped `ParamForm` renders correctly with Behavioral's smaller key
+      set (no Baseline/Hue/Saving boxes).
+- [ ] `test_offscreen.py` — targeted additions only (per current project
+      convention, verify via small scripts/single-test runs during development,
+      not repeated full-suite runs): stage grouping per mode, range/LED-pair
+      round-trip through `values()`/`set_values()`/`changed_values()`, exclusion
+      filtering (same-group only, "NONE" and own value never disabled), `order`
+      dropdown <-> firmware value mapping, `PhaseDiagram` content from
+      `values_changed`, `SavingSection` checkbox-gating and default-path fallback.
+- [ ] `docs/prototype2/statusREP.md`: update the config-screen description to
+      match the new stage-grouped layout.
+- [ ] Visual check: offscreen-screenshot each mode's new config screen (same
+      one-off-script approach as M13.3) before calling this done. Flag for a
+      hardware/manual pass since it changes user-facing behavior beyond pure
+      layout (LED exclusion filtering, no more Start-time save dialogs).
+
+**Status: not started.**
