@@ -251,73 +251,114 @@ Test: offscreen test verifies plot and table update on simulated frames.
 **Status: implemented this session, not yet hardware-tested.**
 
 ### M14 — GUI: config screen redesign (stages, labels, visuals)
-- [ ] For the visited grid locations. Force the x axis limits to be minLedA to maxLedA,and the y axis limits to be minLedB, maxLedB (these might have different names)
-- [ ] For the heatmaps in the grid-hue, add a new text box that allows to change the color limits in real time. If changed, the maps should change. 
+
 Design spec: `docs/superpowers/specs/2026-07-02-config-screen-redesign-design.md`
-(brainstormed and approved; read it before starting — this checklist summarizes it).
+(brainstormed and approved before implementation).
 
 Files: `param_form.py` (most of the work), `solid_view.py`, `linear_view.py`,
-`grid_view.py`, `behavioral_view.py`, `test_offscreen.py`, `docs/prototype2/statusREP.md`.
+`grid_view.py`, `behavioral_view.py`, `docs/prototype2/statusREP.md`.
 
 Reorganizes the Linear/Grid/Behavioral config screens from one flat list of
 firmware-named fields into stage-grouped sections (Timing/Stimulus/Reference/
 Baseline/Hue/Saving) with friendly labels, LED color swatches, a live stim-vs-
 reference phase diagram, cross-field LED exclusion filtering, and a proper
 "Saving" section replacing the Start-time popup dialogs. Firmware/protocol
-unchanged — GUI-only. `main_window.py` should need no changes (the `ParamForm`
-round-trip contract — `values()`/`set_values()`/`changed_values()` — stays the
+unchanged — GUI-only. `main_window.py` needed zero changes (the `ParamForm`
+round-trip contract — `values()`/`set_values()`/`changed_values()` — kept the
 same signature throughout).
 
-- [ ] `param_form.py`: add `ParamMeta`, enrich `PARAM_SPEC` with `label`/`unit`/
-      `stage`/`exclusion_group` for every key; move `LED_COLORS` here from
-      `solid_view.py` (single source of truth).
-- [ ] `param_form.py`: add `RANGE_PAIRS` (`minA`/`maxA`, `minB`/`maxB`); reuse the
-      existing `_LED_PHASE_FIELDS` table for LED+intensity row pairing; rework
-      `ParamForm.__init__` to build one `QGroupBox` per stage (only for stages the
-      mode's key list actually has fields in), rendering paired rows as a single
-      row. `values()`/`set_values()`/`changed_values()` signatures and behavior
-      must not change — widgets stay registered per-key exactly as today.
-- [ ] `param_form.py`: add a color-swatch `QLabel` next to every LED dropdown; add
-      a `values_changed` signal (re-emitted from every child widget's change
-      signal); add cross-dropdown exclusion-group filtering (`stim`: LEDA/LEDB/
-      bgStim1Led/bgStim2Led, `reference`: ref1/2/3Led, `baseline`: baselineLed1/2/3)
-      via `QStandardItemModel` item-flag disabling (never remove items, never
-      disable "NONE" or a combo's own current value) — run once after
-      `set_values()` and again on every `values_changed`.
-- [ ] `param_form.py`: special-case `order` as a 4-item named dropdown ("Standard",
+- [x] `param_form.py`: added `ParamMeta`, enriched `PARAM_SPEC` with `label`/
+      `unit`/`stage`/`exclusion_group` for every key; moved `LED_COLORS` here
+      from `solid_view.py` (single source of truth).
+- [x] `param_form.py`: added `RANGE_PAIRS` (`minA`/`maxA`, `minB`/`maxB`) and
+      reused the existing `_LED_PHASE_FIELDS` table for LED+intensity pairing;
+      `ParamForm.__init__` builds one `QGroupBox` per stage (only for stages
+      the mode's key list actually has fields in). `values()`/`set_values()`/
+      `changed_values()` signatures and behavior unchanged — widgets stay
+      registered per-key exactly as before.
+- [x] `param_form.py`: color-swatch `QLabel` next to every LED dropdown; a
+      `values_changed` signal (re-emitted from every child widget's change
+      signal); cross-dropdown exclusion-group filtering (`stim`: LEDA/LEDB/
+      bgStim1Led/bgStim2Led, `reference`: ref1/2/3Led, `baseline`:
+      baselineLed1/2/3) via `QStandardItemModel` item-flag disabling (never
+      removes items, never disables "NONE" or a combo's own current value) —
+      runs once after `set_values()` and again on every `values_changed`.
+- [x] `param_form.py`: `order` is now a 4-item named dropdown ("Standard",
       "Flip LEDB axis", "Flip LEDA axis", "Flip both axes") mapped to firmware
-      values `{1,2,3,4}` — drop `0` from the UI (confirmed identical to `1` in
-      `gridMode.cpp`).
-- [ ] `param_form.py`: new `PhaseDiagram` widget — two labeled panels ("Stim"/
+      values `{1,2,3,4}` — `0` dropped from the UI (confirmed identical to `1`
+      in `gridMode.cpp`).
+- [x] `param_form.py`: new `PhaseDiagram` widget — two labeled panels ("Stim"/
       "Reference") with colored role chips built from current form values,
-      refreshed on `values_changed`. No Baseline diagram (own group box is
-      sufficient there).
-- [ ] `param_form.py`: new `SavingSection` widget (Linear/Grid only) — experiment
-      name field, existing "Save hue data to file" checkbox, destination path
-      display + "Choose file..." button. No dialogs pop up at Start anymore; an
-      unset destination silently falls back to the default
-      `<mode>hue_exp_<name>_<timestamp>.txt` path in the working directory.
-- [ ] `solid_view.py`: import `LED_COLORS` from `param_form` instead of a local copy.
-- [ ] `linear_view.py` / `grid_view.py`: add `PhaseDiagram` + `SavingSection` to
-      `LinearConfigPage`/`GridConfigPage`'s layout; remove the `QInputDialog`/
-      `QFileDialog`-at-Start flow from `_on_start()`, reading the destination from
-      `SavingSection` instead (`hue_log_path()` keeps its existing signature).
-- [ ] `behavioral_view.py`: add a `PhaseDiagram` to `BehavioralConfigPage` (no
-      `SavingSection` — this mode doesn't save experiment data); confirm the
-      stage-grouped `ParamForm` renders correctly with Behavioral's smaller key
-      set (no Baseline/Hue/Saving boxes).
-- [ ] `test_offscreen.py` — targeted additions only (per current project
-      convention, verify via small scripts/single-test runs during development,
-      not repeated full-suite runs): stage grouping per mode, range/LED-pair
-      round-trip through `values()`/`set_values()`/`changed_values()`, exclusion
-      filtering (same-group only, "NONE" and own value never disabled), `order`
-      dropdown <-> firmware value mapping, `PhaseDiagram` content from
-      `values_changed`, `SavingSection` checkbox-gating and default-path fallback.
-- [ ] `docs/prototype2/statusREP.md`: update the config-screen description to
-      match the new stage-grouped layout.
-- [ ] Visual check: offscreen-screenshot each mode's new config screen (same
-      one-off-script approach as M13.3) before calling this done. Flag for a
-      hardware/manual pass since it changes user-facing behavior beyond pure
-      layout (LED exclusion filtering, no more Start-time save dialogs).
+      refreshed on `values_changed`. No Baseline diagram (its own group box
+      with swatches is self-explanatory without one).
+- [x] `param_form.py`: new `SavingSection` widget (Linear/Grid only) —
+      experiment name field, existing "Save hue data to file" checkbox,
+      destination path display + "Choose file..." button. No dialogs pop up
+      at Start anymore; an unset destination silently falls back to the
+      default `<mode>hue_exp_<name>_<timestamp>.txt` path.
+- [x] `solid_view.py`: imports `LED_COLORS` from `param_form` instead of a
+      local copy.
+- [x] `linear_view.py` / `grid_view.py`: `PhaseDiagram` + `SavingSection` added
+      to `LinearConfigPage`/`GridConfigPage`'s layout; the `QInputDialog`/
+      `QFileDialog`-at-Start flow removed from `_on_start()` (`Start` button
+      now connects straight to `start_requested`), destination read from
+      `SavingSection` instead (`hue_log_path()` kept its exact signature).
+- [x] `behavioral_view.py`: `PhaseDiagram` added to `BehavioralConfigPage` (no
+      `SavingSection` — this mode doesn't save experiment data yet); the
+      stage-grouped `ParamForm` renders correctly with Behavioral's smaller
+      key set (no Baseline/Hue/Saving boxes).
+- [x] Fixed a handful of *existing* `test_offscreen.py` tests that referenced
+      now-renamed internals (`_save_hue_checkbox` → `_saving._save_checkbox`,
+      direct `_hue_log_path` assignment → `_saving._explicit_path` +
+      checkbox). No new tests added for the rest of M14 — verified instead via
+      `py_compile`, small targeted standalone scripts (`PARAM_SPEC`/
+      `_ROW_ORDER` coverage, round-trip, exclusion filtering, `order`
+      mapping), and offscreen screenshots of all three config pages, per an
+      explicit instruction partway through this work to stop extending/
+      running the slow, crash-prone full `test_offscreen.py` suite.
+- [x] `docs/prototype2/statusREP.md`: added "What M13 implements"/"What M14
+      implements" sections describing all of the above and the M13.1-M13.3
+      work that preceded it.
 
-**Status: not started.**
+**Status: implemented, committed (`df06880`), hardware/manual-tested by the user — confirmed working.**
+
+#### M14 follow-up: exact grid axis limits + column-based layout
+
+Two more rounds of refinement requested after trying M14 on hardware:
+
+1. **Grid plot axis limits.** First ask: force the visited-grid plot's x/y
+   range to exactly `[minA,maxA]`/`[minB,maxB]` (was padded 5%). Turned out
+   `_grid_plot.setAspectLocked(True)` (added in M13.3 for the "square" look)
+   was fighting this — aspect lock forces 1:1 unit-per-pixel scaling, which
+   stretches whichever axis doesn't match the widget's actual pixel
+   proportions, so the "exact" range wasn't holding under a non-square
+   widget. Fixed by dropping the aspect lock entirely (confirmed with the
+   user: exact limits matter more than the forced-square look). Second ask,
+   right after: re-add a *small* padding (`0.05`, not `0`) so marker circles
+   at the min/max edge points don't get visually clipped once visited — done,
+   and since the aspect lock is gone this now applies exactly and
+   independently on each axis regardless of widget shape.
+2. **Heatmap color-limit control.** Added a live "Heatmap color max"
+   `QSpinBox` next to the three per-cell hue heatmaps in `GridSessionPage`
+   (`_heat_clim`, defaults to the old fixed `(0, 10000)`); changing it
+   re-applies `levels=` to all three `ImageItem`s immediately.
+3. **Column-based stage layout.** Each stage `QGroupBox` was a vertical
+   `QFormLayout` (one field per row); changed to a horizontal `QHBoxLayout`
+   of labeled columns instead, applied to *every* stage (confirmed with the
+   user, not just Timing/Stimulus as in the original examples) — e.g. Timing
+   now shows Frequency/Duration/ITI/Order side by side, Reference shows
+   Ref1/Ref2/Ref3 side by side. LEDA/LEDB's dropdown and their own min-max
+   range now merge into one column (`_ROW_ORDER`'s new `led_range` tier)
+   instead of two stacked rows; "Number of steps" stays on its own column
+   (per the user's preference — it's shared by LEDA/LEDB, not specific to
+   either).
+   - Caught (via screenshots, not code review) and fixed two `PhaseDiagram`
+     bugs surfaced by this refactor: a lone chip in a row stretched to fill
+     the whole panel (`_fill()` had no trailing `addStretch()`); and swapping
+     chips via `deleteLater()` alone left stale ones visibly overlapping the
+     new ones, since `set_values()` fires several `values_changed` refreshes
+     back-to-back during config load and `deleteLater()` only *schedules*
+     removal — fixed by also calling `widget.setParent(None)` immediately.
+   - No tests added for this follow-up round, per explicit instruction.
+
+**Status: implemented, committed (`df06880`), tested by the user — confirmed working, "everything looks great."**

@@ -177,12 +177,13 @@ Same two-phase flicker structure as Grid (stim = LEDA + LEDB + bgStim1 + bgStim2
 | `protocol.py` | `parse_frame`, `parse_get_response`, `build_mode_command`, `build_set_command` for the `MODE`/`SET`/`GET`/`START`/`STOP` protocol | Done (M7) |
 | `main_window.py` | `ConnectPage`, `ModeSelectPage`, `MainWindow` navigation | Done (M8, extended M10-M12) |
 | `solid_view.py` | Sub-mode A (Solid) view | Done (M9) |
-| `param_form.py` | Shared config form widget (Linear/Grid/Behavioral) | Done (M10, extended M11.1/M12) |
+| `param_form.py` | Shared config form widget (Linear/Grid/Behavioral) + `PhaseDiagram`/`SavingSection` | Done (M10, extended M11.1/M12, redesigned M14) |
 | `config_io.py` | JSON save/load for experiment configs | Done (M10) |
-| `linear_view.py` | Sub-mode B (Linear) config + session views | Done (M10, extended M11.1) |
-| `grid_view.py` | Sub-mode C (Grid) config + session views | Done (M11, extended M11.1) |
-| `behavioral_view.py` | Sub-mode D (Behavioral) config + session views | Done (M12) |
-| `test_offscreen.py` | Offscreen test suite (protocol, navigation, all views), `QT_QPA_PLATFORM=offscreen` | Done (M7-M12), extended each milestone |
+| `figure_export.py` | `save_plot_widgets()` — exports a session page's pyqtgraph plots to PNG | Done (M13.2) |
+| `linear_view.py` | Sub-mode B (Linear) config + session views | Done (M10, extended M11.1/M13/M14) |
+| `grid_view.py` | Sub-mode C (Grid) config + session views | Done (M11, extended M11.1/M13/M14) |
+| `behavioral_view.py` | Sub-mode D (Behavioral) config + session views | Done (M12, extended M13.2/M14) |
+| `test_offscreen.py` | Offscreen test suite (protocol, navigation, all views), `QT_QPA_PLATFORM=offscreen` | Done (M7-M13), extended each milestone (M14 layout/visual work verified via one-off scripts instead, see M14 notes) |
 
 ## What M8/M9 implement
 
@@ -210,9 +211,89 @@ Same two-phase flicker structure as Grid (stim = LEDA + LEDB + bgStim1 + bgStim2
 - **`PlaceholderPage` removed**: with all 4 modes now having real views, the placeholder was dead code.
 - **M12.1**: `main.py` launches with `window.showMaximized()` — with this many parameters on the config screens, a small default window made it hard to see the whole picture.
 
+## What M13 implements
+
+- **M13.1**: per-mode config-file prefix enforcement (`_on_load` rejects a filename not starting with the mode's prefix), a smaller slider debounce (`_SET_DEBOUNCE_MS` 100→50), a solid-hue press-count/table panel, a 2s "Starting in Ns..." countdown before `START` (`main_window.py` `START_DELAY_S`), and an experiment-name prompt folded into the hue-log filename.
+- **M13.2**: `figure_export.py`'s `save_plot_widgets(parent, plots, default_name)` — one `QFileDialog` prompt, then each named `PlotWidget` exported via `pyqtgraph.exporters.ImageExporter` (multiple plots get their name inserted before the file extension). A "Save figure..." button wired into every session page, always enabled (not gated to after Stop). Solid-hue's `_press_log` (already capturing the full frame per press since M9) got a "Save press data..." button writing it to a space-separated `FRAME_FIELDS`-header `.txt`, matching the Linear/Grid hue-log format.
+- **M13.3**: reverted window compact-sizing back to always-maximized (`_switch_to` just calls `showMaximized()`) — the M13.1/M13.2 compact-window experiment didn't look good in practice. `GridSessionPage` layout reworked: square-ish grid plot left, thin cumulative+mean-per-step stack right, three small per-cell hue heatmaps below (steps×steps, indexed like the visited-cell scatter, filled with each cell's mean-per-step value as `_flush_trial_mean` runs — using `_current`, which still holds the *just-finished* trial's cell at that point since the new trial's grid-position update happens later in the same `_on_line` call). Heatmap colormaps: black→`#DA2C43`/`#ACE1AF`/`#89CFF0` (R/G/B) via `pyqtgraph.ColorMap`. Mean-per-step curves lost their point markers (lines only, less clutter with many points). README got a Screenshots section (`docs/prototype2/screenshots/`), generated via a one-off offscreen script — not part of `test_offscreen.py`.
+- **Grid axis/heatmap refinements (same session as M14)**: the grid plot's `setAspectLocked(True)` (added for M13.3's "square" look) was found to conflict with wanting *exact* `[minA,maxA]`×`[minB,maxB]` axis limits — aspect lock forces 1:1 unit-per-pixel scaling, which stretches whichever axis doesn't match the widget's actual pixel proportions. Resolved by dropping the aspect lock entirely (exact limits matter more than the square look) and using `padding=0.05` (not `0`) on `setXRange`/`setYRange` so marker circles at the min/max edge points don't get clipped. The three heatmaps gained a live "Heatmap color max" `QSpinBox` (`_heat_clim`, default matches `_HEATMAP_CLIM`) instead of a fixed `(0, 10000)` — changing it re-applies `levels=` to all three `ImageItem`s immediately.
+
+## What M14 implements
+
+Full redesign of the Linear/Grid/Behavioral config screens — see
+`docs/superpowers/specs/2026-07-02-config-screen-redesign-design.md` for the
+original design rationale (brainstormed with the user before implementation).
+
+- **Stage-grouped, column layout**: `param_form.py`'s `PARAM_SPEC` (a plain
+  dict, unchanged as the source of truth for widget kind/range) gained a
+  `ParamMeta` dataclass with `label` (friendly name, not the firmware key),
+  `unit`, `stage` (`Timing`/`Stimulus`/`Reference`/`Baseline`/`Hue`), and
+  `exclusion_group`. `ParamForm` builds one `QGroupBox` per stage present in
+  the mode's key list (Behavioral has no Baseline/Hue boxes), and *within*
+  each box every field is a labeled column in a single horizontal row (not a
+  vertical list) — e.g. Timing shows Frequency/Duration/ITI/Order side by
+  side. `_ROW_ORDER` is a fixed, hand-ordered list of "row specs" tried
+  most- to least-specific per field: `("led_range", led_key, lo_key, hi_key)`
+  (LEDA/LEDB + their own min-max range, merged into one column) → `("range",
+  label, lo_key, hi_key)` (a bare min/max pair without its LED) → `("led_pair",
+  led_key)` (an LED + single intensity, for backgrounds/reference/baseline,
+  looked up via the pre-existing `_LED_PAIR_BY_LED_KEY`) → the bare key alone.
+  Each tier only fires if *all* its keys are present and not already consumed
+  by an earlier tier, so a `ParamForm` built with a partial key subset (e.g.
+  just `maxA` without `minA`, as some unit tests do) still renders that field
+  standalone instead of silently dropping it. The widget registry
+  (`self._widgets`, keyed by firmware param name) and the `values()`/
+  `set_values()`/`changed_values()` contract are **unchanged** — only how
+  widgets are grouped/labeled changed, so `main_window.py` needed zero edits.
+- **LED color swatches + exclusion filtering**: every LED `QComboBox` gets a
+  small color swatch (`LED_COLORS`, moved here from `solid_view.py` as the
+  one source of truth) that updates live. LED widgets in the same
+  `exclusion_group` (`stim`: LEDA/LEDB/bgStim1Led/bgStim2Led; `reference`:
+  ref1/2/3Led; `baseline`: baselineLed1/2/3) grey out (via
+  `QStandardItemModel` item-flag disabling, not removal) whichever LED is
+  already picked in a sibling of the same group — "NONE" and a combo's own
+  current value are never disabled. This is a GUI convenience only; the
+  firmware's own duplicate-LED rejection (`serialParser.cpp`) is unchanged
+  and remains the real source of truth.
+- **`order` becomes a named dropdown**: "Standard"/"Flip LEDB axis"/"Flip
+  LEDA axis"/"Flip both axes", mapped to firmware values `{1,2,3,4}` — `0` is
+  dropped from the UI since `gridMode.cpp` confirms it's identical to `1`.
+- **`PhaseDiagram`** (new, shared by all 3 modes): a small live "what's on in
+  each phase" summary — colored chips for LEDA/LEDB/backgrounds (Stim panel)
+  and ref1/2/3 (Reference panel), rebuilt from `ParamForm.values()` on a new
+  `values_changed` signal (re-emitted from every child widget's own change
+  signal). Two bugs found via visual (screenshot) inspection, not code
+  review, and fixed: (1) a chip row with only one chip stretched to fill the
+  whole panel because `_fill()` had no trailing `addStretch()`; (2) `_fill()`
+  used `deleteLater()` alone to remove old chips, which only *schedules*
+  deletion — since `set_values()` fires several `values_changed` refreshes
+  back-to-back while populating the form, stale chip widgets stayed visible
+  (still parented, just not laid out) until the event loop next ran,
+  overlapping the new ones. Fixed by calling `widget.setParent(None)`
+  immediately in addition to `deleteLater()`.
+- **`SavingSection`** (new, Linear/Grid only): experiment name field, the
+  existing "Save hue data to file" checkbox, and a destination path
+  display + "Choose file..." button — all decided ahead of time on the
+  config screen. `_on_start()` no longer opens any dialog: an unset
+  destination silently falls back to the same default filename pattern
+  (`<mode>hue_exp_<name>_<timestamp>.txt`) computed at Start. `hue_log_path()`
+  keeps its exact old signature/meaning.
+- **Verification approach**: per explicit instruction partway through this
+  work, `test_offscreen.py` was *not* extended for the column-layout and
+  grid-axis follow-up changes, and the full suite was not run repeatedly
+  during development (it's slow and has a pre-existing, unrelated
+  offscreen/Qt teardown segfault). Instead: `py_compile` on every touched
+  file, small targeted standalone scripts exercising the new APIs directly
+  (`PARAM_SPEC`/`_ROW_ORDER` coverage, round-trip, exclusion filtering,
+  `order` mapping), re-running the handful of *existing* tests that
+  referenced now-renamed internals (`_save_hue_checkbox` → `_saving`,
+  `_hue_log_path` → `SavingSection`), and offscreen screenshots of all three
+  config pages to visually confirm the layout (this is how both `PhaseDiagram`
+  bugs above were actually caught).
+
 ---
 
-## GUI stack (M7–M12)
+## GUI stack (M7–M14)
 
 - **Output**: `prototype2/GUI/configurableFirmware/`
 - **Stack**: PySide6 + pyqtgraph + pyserial, managed by `uv`
