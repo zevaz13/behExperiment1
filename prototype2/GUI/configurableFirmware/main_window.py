@@ -12,9 +12,7 @@ Navigation: Connect -> ModeSelect -> per-mode view.
   experiment actually begins.
 Back from any per-mode view sends STOP and returns to ModeSelect.
 
-Window sizing: ModeSelect, Solid(-hue), and the Linear session screen are
-light on parameters and use a compact window (COMPACT_WINDOW_SIZE); every
-other page (config screens, Grid/Behavioral sessions) stays maximized.
+Every page is shown maximized (M13.3).
 """
 
 from __future__ import annotations
@@ -43,11 +41,6 @@ from solid_view import SolidView
 
 AUTO_DETECT_RETRY_MS = 500
 AUTO_DETECT_ATTEMPTS_BEFORE_FALLBACK = 6
-
-# M13: ModeSelect/Solid/Linear-session are param-light, so they use a compact
-# window instead of the full-screen default (which exists for the
-# param-heavy config screens, per M12.1).
-COMPACT_WINDOW_SIZE = (900, 650)
 
 START_DELAY_S = 2
 
@@ -279,9 +272,6 @@ class MainWindow(QMainWindow):
             "BEHAVIORAL": self._behavioral_config_page,
         }
 
-        # Pages light enough on parameters to not need the full-screen default.
-        self._compact_pages = {self._mode_select_page, self._solid_view, self._linear_session_page}
-
         self._connect_page.connected.connect(self._on_connected)
         self._mode_select_page.mode_chosen.connect(self._on_mode_chosen)
         self._solid_view.back_requested.connect(self._on_back_requested)
@@ -300,11 +290,7 @@ class MainWindow(QMainWindow):
     # --- Navigation handlers ------------------------------------------------
 
     def _switch_to(self, page: QWidget) -> None:
-        if page in self._compact_pages:
-            self.showNormal()
-            self.resize(*COMPACT_WINDOW_SIZE)
-        else:
-            self.showMaximized()
+        self.showMaximized()
         self._stack.setCurrentWidget(page)
 
     def _on_connected(self, link: SerialLink) -> None:

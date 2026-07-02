@@ -204,10 +204,48 @@ Test: offscreen test verifies plot and table update on simulated frames.
 - [x] Added offscreen tests for both cases: zeroed press frame falls back to the cached value; non-zero press frame is trusted directly (regression guard for the M9-era test).
 
 **Status: implemented, all 49 `test_offscreen.py` tests pass. This fix is GUI-only (no reflash needed) — should resolve the issue immediately once you pull the updated `behavioral_view.py`.**
-### M13. Refinement and details
-- Lets make it so for a given mode, we only can load configuration files for that one. Grid can only load files starting with gridParamConfig, linear only linearParamConfig, and behavioral only beh_configparams.
-- The window for the mode selection GUI, solid mode, solid-hue mode, linear mode (not configuration. the experiment itself) should be smaller. 
-- The delay for the slidders now is too big, it could be a little smaller.
-- make the solid-hue, do something to show the button presses.
-- For the linear, grid and behavioral modes, please add a 2 second delay after pressing the start button and the experiment start.
-- When saving data please allow a space for the user to add an experiment name so resulting files would look like for example gridhue_exp_"ExpName"_timestamp.
+### M13.1 Refinement and details
+- [x] Lets make it so for a given mode, we only can load configuration files for that one. Grid can only load files starting with gridParamConfig, linear only linearParamConfig, and behavioral only beh_configparams.
+  Each config page's `_on_load` rejects any filename not starting with its mode's prefix (`linearParamConfig`/`gridParamConfig`/`beh_configparams`), warning via `QMessageBox` instead of loading. Tested by `test_config_load_rejects_wrong_mode_prefix`.
+- [x] The window for the mode selection GUI, solid mode, solid-hue mode, linear mode (not configuration. the experiment itself) should be smaller.
+  Added `COMPACT_WINDOW_SIZE` in `main_window.py`, applied to ModeSelect/Solid/Linear-session; everything else (config screens, Grid/Behavioral sessions) stays maximized. (Superseded by explicit pixel sizes in M13.2.)
+- [x] The delay for the slidders now is too big, it could be a little smaller.
+  `solid_view.py` `_SET_DEBOUNCE_MS` reduced from 100 to 50.
+- [x] make the solid-hue, do something to show the button presses.
+  Added a live press-count label + per-press R/G/B table (`_press_panel`) to `solid_view.py`, shown only while hue is enabled.
+- [x] For the linear, grid and behavioral modes, please add a 2 second delay after pressing the start button and the experiment start.
+  `main_window.py`: `START_DELAY_S = 2`; `_run_start_countdown` shows "Starting in Ns..." on the session page, then sends `START`.
+- [x] When saving data please allow a space for the user to add an experiment name so resulting files would look like for example gridhue_exp_"ExpName"_timestamp.
+  `linear_view.py`/`grid_view.py` `_on_start` prompt via `QInputDialog` for an optional experiment name, folded into the default hue-log filename (`linearhue_exp_<name>_<timestamp>.txt` / `gridhue_exp_<name>_<timestamp>.txt`).
+
+**Status: implemented and committed (`ffd72ef`).**
+
+### M13.2 Refinement and details
+- Make the default size of experiment mode selection, solid experiment, solid hue, and linear experiment something like 1184x612 px would be great. Linear-hue should be 1800x700 px.
+- When data acquisition stops, the figures displayed on the screen can be saved.
+- In the solid-hue mode, when the person presses the button, I like what is shown in the column, but in the background keep also track of all the LED values at button press, and all the hue resulting parameters. Add a button to allow the person to save that table.
+
+- [x] `main_window.py`: replaced `COMPACT_WINDOW_SIZE` with `DEFAULT_WINDOW_SIZE` (1184x612 — ModeSelect, Solid(-hue), Linear session without hue) and `LINEAR_HUE_WINDOW_SIZE` (1800x700 — Linear session only when that run's `hue=1`); `_switch_to` now takes an optional explicit size, computed per-run for Linear via `_window_size_for`. Grid/Behavioral are unaffected (stay maximized).
+- [x] `figure_export.py` (new, shared): `save_plot_widgets(parent, plots, default_name)` prompts once for a filename and exports each named `PlotWidget` to PNG via `pyqtgraph.exporters.ImageExporter` (multiple plots get their name inserted before the extension). Wired into a "Save figure..." button on every session page: `solid_view` (hue plot, only when hue is on), `linear_view` (cumulative + mean hue plots, only when hue is on), `grid_view` (grid plot always, plus hue plots when on), `behavioral_view` (LEDA/LEDB scatter plot, always). The button is always enabled, not gated to after Stop, so it can be used anytime including once the run has stopped.
+- [x] `solid_view.py`: the per-press `_press_log` already captured the full frame dict (all 5 LED intensities + HUE_R/G/B/CT/L, from the original M9 design) — this just needed exposing. Added a "Save press data..." button that writes it to `solidhue_presses_<timestamp>.txt`, the same space-separated `FRAME_FIELDS`-header format as the Linear/Grid hue logs.
+- [x] Added offscreen tests: exact window sizes for the four light pages/states, Save-figure plot-set contents per mode (and hue-dependent visibility for Linear), Save-press-data file contents.
+
+**Status: hardware-tested and tried by the user — confirmed working.**
+
+### M13.3
+- Make all the windows full screen. I dont like the way it looks now.
+- In the grid hue experiment screen, lets do the following:
+      - drop the markers in the mean per step plot, they make it hard to see the lines with many markers.
+      - Change the layout of this screen. I want the grid with visited pixels to be on the left (and square). Next to it, on the right top the cummulative hue values, and under it the mean per step values. these 2 should be thiner, spanning the same space as the height of the matrix of visited pixels.
+      - Under these, I would like you to include something similar to place 3 matrix plots (imshow in matplot lib that shows the value of each of the 3 hue channels in different plots across the experiment)
+        use the folloving values for the color maps of these matrix plots : Red #DA2C43, green green #ACE1AF, blue #89CFF0. These could be small plots, the color limits should be 10000. 
+- update projects readme. You may add figures if you can make them. To show the GUI.
+
+- [x] `main_window.py`: removed the whole compact-window mechanism (`DEFAULT_WINDOW_SIZE`/`LINEAR_HUE_WINDOW_SIZE`/`_compact_pages`/`_window_size_for`) added in M13.1/M13.2 — `_switch_to` now just always calls `showMaximized()`. Every page is maximized again.
+- [x] `grid_view.py` `GridSessionPage`: dropped `symbol="o"` from the mean-per-step curves (lines only). Reworked the layout: `_grid_plot` (aspect-locked, so it renders square) on the left; `_hue_col_widget` (cumulative + mean stacked, thin) on the right, same total height as the grid; `_heat_widget` (three small per-cell heatmaps, one per hue channel) below both, spanning the full width. `_hue_col_widget`/`_heat_widget` stay hidden together when hue is off, same as the old combined `_hue_widget`.
+- [x] Per clarification: the three heatmaps are `steps x steps` grids indexed the same way as the visited-cell scatter (`(LEDA index, LEDB index)`), not a time-strip — each cell starts at 0 and is filled with that cell's mean-per-step hue value as its trial's mean is flushed (`_flush_trial_mean`, using `_current` — still holds the just-finished trial's cell at that point, since the grid-position update for the new trial's frame happens later in the same `_on_line` call). Colormaps are black-to-`#DA2C43`/`#ACE1AF`/`#89CFF0` (R/G/B) via `pyqtgraph.ColorMap`, fixed levels `(0, 10000)` regardless of data range.
+- [x] `_on_save_figure` (Grid) now also exports the three heatmaps when hue is enabled.
+- [x] `README.md`: added a Screenshots section (ModeSelect, Solid+hue, Grid+hue showing the new layout, Linear+hue) generated via a one-off offscreen script (not part of `test_offscreen.py`); images in `docs/prototype2/screenshots/`.
+- [x] `test_offscreen.py`: replaced the now-obsolete compact-window-size tests with `test_all_pages_are_maximized`; no other test changes (per instruction to minimize use of this suite — a separate one-off script and `py_compile` were used to verify the new code instead of running the full suite).
+
+**Status: implemented this session, not yet hardware-tested.**

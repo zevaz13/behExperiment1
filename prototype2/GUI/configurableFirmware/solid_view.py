@@ -4,14 +4,18 @@ Solid has no config screen (see design spec); MainWindow sends MODE SOLID
 (+ SET hue 1, if chosen on ModeSelectPage) and START before switching here, so
 sliders are live immediately. Each slider sends SET <COLOR>LED <value> on
 change. Incoming FRAME@ lines drive the hue bar plot and, while hue is active,
-append a snapshot row every time Press=1 to both an in-memory log (for saving
-later, once that milestone lands) and a visible press-count/table panel.
+append a snapshot row every time Press=1 to both an in-memory log (the full
+frame -- all LED values and hue params, saveable via "Save press data...")
+and a visible press-count/table panel. "Save figure..." exports the hue plot.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -25,7 +29,8 @@ from PySide6.QtWidgets import (
 )
 from pyqtgraph import BarGraphItem, PlotWidget
 
-from protocol import build_set_command, parse_frame
+from figure_export import save_plot_widgets
+from protocol import FRAME_FIELDS, build_set_command, parse_frame
 from serial_link import SerialLink
 
 LED_ORDER = ("RED", "YELLOW", "GREEN", "BLUE", "CYAN")
@@ -164,10 +169,18 @@ class SolidView(QWidget):
         self._press_table.verticalHeader().setVisible(False)
         self._press_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self._press_table.setMaximumHeight(160)
+        save_figure_btn = QPushButton("Save figure...")
+        save_figure_btn.clicked.connect(self._on_save_figure)
+        save_press_btn = QPushButton("Save press data...")
+        save_press_btn.clicked.connect(self._on_save_press_log)
+        hue_save_row = QHBoxLayout()
+        hue_save_row.addWidget(save_figure_btn)
+        hue_save_row.addWidget(save_press_btn)
         self._press_panel = QWidget()
         press_col = QVBoxLayout(self._press_panel)
         press_col.addWidget(self._press_count_label)
         press_col.addWidget(self._press_table)
+        press_col.addLayout(hue_save_row)
         self._press_panel.setVisible(False)
 
         back_btn = QPushButton("Back to mode selection")
@@ -240,6 +253,25 @@ class SolidView(QWidget):
         if frame["Press"] == 1:
             self._press_log.append(dict(frame))
             self._add_press_row(frame)
+
+    def _on_save_figure(self) -> None:
+        default_name = f"solidhue_figure_{datetime.now():%Y%m%d_%H%M%S}.png"
+        save_plot_widgets(self, {"hue": self._hue_plot}, default_name)
+
+    def _on_save_press_log(self) -> None:
+        """Writes the full per-press record (all LED values + hue params, not
+        just the R/G/B columns shown in the table) to a text file, same
+        space-separated FRAME_FIELDS format as the Linear/Grid hue logs."""
+        if not self._press_log:
+            return
+        default_name = f"solidhue_presses_{datetime.now():%Y%m%d_%H%M%S}.txt"
+        path, _ = QFileDialog.getSaveFileName(self, "Save press data", default_name, "Text files (*.txt)")
+        if not path:
+            return
+        with open(path, "w") as f:
+            f.write(" ".join(FRAME_FIELDS) + "\n")
+            for frame in self._press_log:
+                f.write(" ".join(str(frame[field]) for field in FRAME_FIELDS) + "\n")
 
     def _add_press_row(self, frame: dict) -> None:
         row = self._press_table.rowCount()

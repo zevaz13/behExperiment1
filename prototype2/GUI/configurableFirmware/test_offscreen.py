@@ -27,6 +27,7 @@ _app = QApplication.instance() or QApplication(sys.argv)
 import behavioral_view  # noqa: E402
 import grid_view  # noqa: E402
 import linear_view  # noqa: E402
+import solid_view  # noqa: E402
 from config_io import load_config, save_config  # noqa: E402
 from main_window import START_DELAY_S, MainWindow  # noqa: E402
 from param_form import ParamForm  # noqa: E402
@@ -840,29 +841,95 @@ def test_config_load_rejects_wrong_mode_prefix():
     print("  [OK] Config load rejects files that don't match the mode's filename prefix")
 
 
-def test_compact_window_size_for_light_pages():
-    """M13: ModeSelect/Solid/Linear-session use a compact window; config
-    screens and the Grid/Behavioral sessions stay maximized."""
+def test_all_pages_are_maximized():
+    """M13.3: every page shows maximized (compact-window sizing was removed)."""
     calls: list[str] = []
-    with patch.object(MainWindow, "showMaximized", lambda self: calls.append("max")), \
-         patch.object(MainWindow, "showNormal", lambda self: calls.append("normal")):
+    with patch.object(MainWindow, "showMaximized", lambda self: calls.append("max")):
         w = _make_window()
         _connect(w)
-        assert calls[-1] == "normal", "ModeSelect should use the compact window"
+        assert calls[-1] == "max", "ModeSelect should be maximized"
 
-        w._mode_select_page.mode_chosen.emit("SOLID", False)
-        assert calls[-1] == "normal", "Solid should use the compact window"
+        w._mode_select_page.mode_chosen.emit("SOLID", True)
+        assert calls[-1] == "max", "Solid should be maximized"
 
-        w2, _fake2 = _navigate_to_config("LINEAR")
-        assert calls[-1] == "max", "Linear config screen should stay maximized"
+        w2, _fake2 = _navigate_to_config("LINEAR", {"hue": "1"})
+        assert calls[-1] == "max", "Linear config screen should be maximized"
         w2._linear_config_page.start_requested.emit()
-        assert calls[-1] == "normal", "Linear session screen should use the compact window"
+        assert calls[-1] == "max", "Linear session screen should be maximized"
+    print("  [OK] All pages are shown maximized")
 
-        w3, _fake3 = _navigate_to_config("GRID")
-        assert calls[-1] == "max", "Grid config screen should stay maximized"
-        w3._grid_config_page.start_requested.emit()
-        assert calls[-1] == "max", "Grid session screen should stay maximized"
-    print("  [OK] Compact window applies only to ModeSelect/Solid/Linear-session")
+
+def test_solid_save_figure_exports_hue_plot():
+    w = _make_window()
+    _connect(w)
+    w._mode_select_page.mode_chosen.emit("SOLID", True)
+    session = w._solid_view
+    with patch("solid_view.save_plot_widgets") as save_fig:
+        session._on_save_figure()
+        args, _ = save_fig.call_args
+        assert args[1] == {"hue": session._hue_plot}
+    print("  [OK] Solid-hue Save figure exports the hue plot")
+
+
+def test_solid_save_press_log_writes_full_frame():
+    w = _make_window()
+    fake = _connect(w)
+    w._mode_select_page.mode_chosen.emit("SOLID", True)
+    session = w._solid_view
+    fake.inject(_frame(trial=1, red=10, press=1, hue_r=20, hue_g=30, hue_b=40))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "presses.txt"
+        with patch.object(solid_view.QFileDialog, "getSaveFileName", return_value=(str(path), "")):
+            session._on_save_press_log()
+        lines = path.read_text().splitlines()
+        assert lines[0].split()[0] == "TrialNumber"
+        row = lines[1].split()
+        assert row[0] == "1" and "10" in row, f"Expected trial/LED values in row, got {row}"
+    print("  [OK] Solid-hue Save press data writes the full frame (LED values + hue) per press")
+
+
+def test_linear_save_figure_visibility_and_contents():
+    w, _fake = _navigate_to_config("LINEAR", {"hue": "1"})
+    w._linear_config_page.start_requested.emit()
+    session = w._linear_session_page
+    assert not session._save_figure_btn.isHidden(), "Save figure should be visible when hue is on"
+    with patch("linear_view.save_plot_widgets") as save_fig:
+        session._on_save_figure()
+        args, _ = save_fig.call_args
+        assert set(args[1].keys()) == {"hue_cumulative", "hue_mean"}
+
+    w2, _fake2 = _navigate_to_config("LINEAR", {"hue": "0"})
+    w2._linear_config_page.start_requested.emit()
+    assert w2._linear_session_page._save_figure_btn.isHidden(), "Save figure should be hidden without hue"
+    print("  [OK] Linear Save figure: visible+exports hue plots only when hue is enabled")
+
+
+def test_grid_save_figure_contents_depend_on_hue():
+    w, _fake = _navigate_to_config("GRID", {"hue": "1"})
+    w._grid_config_page.start_requested.emit()
+    with patch("grid_view.save_plot_widgets") as save_fig:
+        w._grid_session_page._on_save_figure()
+        args, _ = save_fig.call_args
+        assert set(args[1].keys()) == {"grid", "hue_cumulative", "hue_mean"}
+
+    w2, _fake2 = _navigate_to_config("GRID", {"hue": "0"})
+    w2._grid_config_page.start_requested.emit()
+    with patch("grid_view.save_plot_widgets") as save_fig:
+        w2._grid_session_page._on_save_figure()
+        args, _ = save_fig.call_args
+        assert set(args[1].keys()) == {"grid"}
+    print("  [OK] Grid Save figure always exports the grid plot, plus hue plots only when hue is enabled")
+
+
+def test_behavioral_save_figure_exports_scatter_plot():
+    w, _fake = _navigate_to_config("BEHAVIORAL")
+    w._behavioral_config_page.start_requested.emit()
+    with patch("behavioral_view.save_plot_widgets") as save_fig:
+        w._behavioral_session_page._on_save_figure()
+        args, _ = save_fig.call_args
+        assert set(args[1].keys()) == {"scatter"}
+    print("  [OK] Behavioral Save figure exports the scatter plot")
 
 
 # ---------------------------------------------------------------------------
@@ -922,7 +989,12 @@ TESTS = [
     test_solid_hue_press_table_and_counter,
     test_solid_press_panel_hidden_without_hue,
     test_config_load_rejects_wrong_mode_prefix,
-    test_compact_window_size_for_light_pages,
+    test_all_pages_are_maximized,
+    test_solid_save_figure_exports_hue_plot,
+    test_solid_save_press_log_writes_full_frame,
+    test_linear_save_figure_visibility_and_contents,
+    test_grid_save_figure_contents_depend_on_hue,
+    test_behavioral_save_figure_exports_scatter_plot,
 ]
 
 

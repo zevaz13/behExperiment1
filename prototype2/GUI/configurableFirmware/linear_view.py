@@ -29,6 +29,7 @@ from PySide6.QtCore import Signal
 from pyqtgraph import PlotWidget, mkPen
 
 from config_io import load_config, save_config
+from figure_export import save_plot_widgets
 from param_form import ParamForm, format_led_assignments
 from protocol import FRAME_FIELDS, parse_frame
 from serial_link import SerialLink
@@ -179,10 +180,14 @@ class LinearSessionPage(QWidget):
 
         stop_btn = QPushButton("Stop")
         stop_btn.clicked.connect(self._stop)
+        self._save_figure_btn = QPushButton("Save figure...")
+        self._save_figure_btn.clicked.connect(self._on_save_figure)
+        self._save_figure_btn.setVisible(False)
         back_btn = QPushButton("Back to mode selection")
         back_btn.clicked.connect(self.back_requested)
         btn_row = QHBoxLayout()
         btn_row.addWidget(stop_btn)
+        btn_row.addWidget(self._save_figure_btn)
         btn_row.addWidget(back_btn)
 
         self._cum_plot = PlotWidget()
@@ -251,6 +256,7 @@ class LinearSessionPage(QWidget):
             f"{format_led_assignments(settings)}"
         )
         self._hue_widget.setVisible(self._hue_enabled)
+        self._save_figure_btn.setVisible(self._hue_enabled)
 
     def detach(self) -> None:
         """Disconnect from the link and close the hue log so a hidden page is inert."""
@@ -272,6 +278,10 @@ class LinearSessionPage(QWidget):
             self._link.send("STOP")
         self._flush_trial_mean()
         self._status_label.setText("Stopped")
+
+    def _on_save_figure(self) -> None:
+        default_name = f"linear_figure_{datetime.now():%Y%m%d_%H%M%S}.png"
+        save_plot_widgets(self, {"hue_cumulative": self._cum_plot, "hue_mean": self._mean_plot}, default_name)
 
     def _flush_trial_mean(self) -> None:
         if not self._trial_hue_samples or self._last_trial is None or _is_baseline_trial(self._last_trial):

@@ -122,6 +122,20 @@ uv run python main.py          # Windows
 
 If developing/testing from WSL/Linux, set `UV_PROJECT_ENVIRONMENT=.venv-linux`. Offscreen tests: `UV_PROJECT_ENVIRONMENT=.venv-linux uv run python test_offscreen.py`.
 
+**Screenshots:**
+
+| Mode select | Solid + hue |
+|---|---|
+| ![Mode select](docs/prototype2/screenshots/mode_select.png) | ![Solid hue](docs/prototype2/screenshots/solid_hue.png) |
+
+| Grid + hue |
+|---|
+| ![Grid hue](docs/prototype2/screenshots/grid_hue.png) |
+
+| Linear + hue |
+|---|
+| ![Linear hue](docs/prototype2/screenshots/linear_hue.png) |
+
 ---
 
 ## Prototype 1 (reference, complete)

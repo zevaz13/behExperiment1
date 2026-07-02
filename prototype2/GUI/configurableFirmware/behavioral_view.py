@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from pyqtgraph import PlotWidget
 
 from config_io import load_config, save_config
+from figure_export import save_plot_widgets
 from param_form import LED_FRAME_KEY, ParamForm, format_led_assignments
 from protocol import parse_frame
 from serial_link import SerialLink
@@ -139,11 +140,14 @@ class BehavioralSessionPage(QWidget):
         press_btn.clicked.connect(self._press)
         stop_btn = QPushButton("Stop")
         stop_btn.clicked.connect(self._stop)
+        save_figure_btn = QPushButton("Save figure...")
+        save_figure_btn.clicked.connect(self._on_save_figure)
         back_btn = QPushButton("Back to mode selection")
         back_btn.clicked.connect(self.back_requested)
         btn_row = QHBoxLayout()
         btn_row.addWidget(press_btn)
         btn_row.addWidget(stop_btn)
+        btn_row.addWidget(save_figure_btn)
         btn_row.addWidget(back_btn)
 
         self._plot = PlotWidget()
@@ -231,6 +235,10 @@ class BehavioralSessionPage(QWidget):
         if self._link is not None:
             self._link.send("STOP")
         self._status_label.setText("Stopped")
+
+    def _on_save_figure(self) -> None:
+        default_name = f"behavioral_figure_{datetime.now():%Y%m%d_%H%M%S}.png"
+        save_plot_widgets(self, {"scatter": self._plot}, default_name)
 
     def _on_line(self, line: str) -> None:
         if line.startswith("ERR "):

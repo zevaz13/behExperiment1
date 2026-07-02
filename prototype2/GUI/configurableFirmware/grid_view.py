@@ -1,9 +1,13 @@
 """Sub-mode C (Grid) views: config screen + experiment (session) screen.
 
 Same load-or-configure config pattern as Linear, plus LEDB/maxB/minB/order.
-Session screen adds a visited/current-point scatter plot (x = LEDA, y = LEDB,
-axes labeled with the assigned LED names), mirroring GUIsubjectExp's
-GridSessionPage. Progress counting, hue plots, and hue-log-file writing are
+Session screen layout (M13.3): a square visited/current-point scatter plot
+(x = LEDA, y = LEDB, axes labeled with the assigned LED names) on the left,
+mirroring GUIsubjectExp's GridSessionPage; a thin cumulative-hue plot stacked
+over a thin mean-per-step plot on the right, spanning the same height as the
+grid; and, below both, one small per-cell heatmap per hue channel (R/G/B),
+each cell showing that (LEDA, LEDB) grid point's mean-per-step value, filled
+in as stim trials complete. Progress counting and hue-log-file writing are
 otherwise the same approach as Linear.
 """
 
@@ -12,6 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
@@ -25,9 +30,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from PySide6.QtCore import Signal
-from pyqtgraph import PlotWidget, ScatterPlotItem, mkBrush, mkPen
+from pyqtgraph import ColorMap, ImageItem, PlotWidget, ScatterPlotItem, mkBrush, mkPen
 
 from config_io import load_config, save_config
+from figure_export import save_plot_widgets
 from param_form import LED_FRAME_KEY, ParamForm, format_led_assignments
 from protocol import FRAME_FIELDS, parse_frame
 from serial_link import SerialLink
@@ -46,6 +52,13 @@ GRID_PARAM_KEYS = [
 _RGB_PENS = {"Red": mkPen("#f70404"), "Green": mkPen("#b1ff01"), "Blue": mkPen("#0493ff")}
 
 _CONFIG_PREFIX = "gridParamConfig"
+
+_HEATMAP_COLORS = {"Red": "#DA2C43", "Green": "#ACE1AF", "Blue": "#89CFF0"}
+_HEATMAP_CLIM = (0, 10000)
+
+
+def _heat_colormap(hex_color: str) -> ColorMap:
+    return ColorMap(pos=[0.0, 1.0], color=["#000000", hex_color])
 
 
 def _is_baseline_trial(trial: int) -> bool:
@@ -187,6 +200,7 @@ class GridSessionPage(QWidget):
         self._cum: dict[str, list[int]] = {"Red": [], "Green": [], "Blue": []}
         self._mean_x: list[int] = []
         self._mean: dict[str, list[float]] = {"Red": [], "Green": [], "Blue": []}
+        self._heat_data: dict[str, np.ndarray] = {c: np.zeros((1, 1)) for c in ("Red", "Green", "Blue")}
 
         self._params_label = QLabel("")
         self._params_label.setWordWrap(True)
@@ -196,14 +210,18 @@ class GridSessionPage(QWidget):
 
         stop_btn = QPushButton("Stop")
         stop_btn.clicked.connect(self._stop)
+        save_figure_btn = QPushButton("Save figure...")
+        save_figure_btn.clicked.connect(self._on_save_figure)
         back_btn = QPushButton("Back to mode selection")
         back_btn.clicked.connect(self.back_requested)
         btn_row = QHBoxLayout()
         btn_row.addWidget(stop_btn)
+        btn_row.addWidget(save_figure_btn)
         btn_row.addWidget(back_btn)
 
         self._grid_plot = PlotWidget()
         self._grid_plot.setBackground("k")
+        self._grid_plot.setAspectLocked(True)
         self._scatter = ScatterPlotItem()
         self._grid_plot.addItem(self._scatter)
 
@@ -215,15 +233,36 @@ class GridSessionPage(QWidget):
         self._mean_plot = PlotWidget()
         self._mean_plot.setBackground("k")
         self._mean_plot.setTitle("Hue — mean per step")
-        self._mean_curves = {
-            c: self._mean_plot.plot([], [], pen=_RGB_PENS[c], symbol="o") for c in ("Red", "Green", "Blue")
-        }
+        self._mean_curves = {c: self._mean_plot.plot([], [], pen=_RGB_PENS[c]) for c in ("Red", "Green", "Blue")}
 
-        self._hue_widget = QWidget()
-        hue_row = QHBoxLayout(self._hue_widget)
-        hue_row.addWidget(self._cum_plot)
-        hue_row.addWidget(self._mean_plot)
-        self._hue_widget.setVisible(False)
+        self._hue_col_widget = QWidget()
+        hue_col = QVBoxLayout(self._hue_col_widget)
+        hue_col.addWidget(self._cum_plot)
+        hue_col.addWidget(self._mean_plot)
+        self._hue_col_widget.setVisible(False)
+
+        top_row = QHBoxLayout()
+        top_row.addWidget(self._grid_plot, stretch=1)
+        top_row.addWidget(self._hue_col_widget, stretch=1)
+
+        self._heat_plots: dict[str, PlotWidget] = {}
+        self._heat_images: dict[str, ImageItem] = {}
+        self._heat_widget = QWidget()
+        heat_row = QHBoxLayout(self._heat_widget)
+        for name in ("Red", "Green", "Blue"):
+            heat_plot = PlotWidget()
+            heat_plot.setBackground("k")
+            heat_plot.setTitle(f"{name} — mean per cell")
+            heat_plot.setAspectLocked(True)
+            heat_plot.getPlotItem().hideAxis("left")
+            heat_plot.getPlotItem().hideAxis("bottom")
+            image = ImageItem()
+            image.setColorMap(_heat_colormap(_HEATMAP_COLORS[name]))
+            heat_plot.addItem(image)
+            self._heat_plots[name] = heat_plot
+            self._heat_images[name] = image
+            heat_row.addWidget(heat_plot)
+        self._heat_widget.setVisible(False)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._params_label)
@@ -231,8 +270,8 @@ class GridSessionPage(QWidget):
         layout.addWidget(self._status_label)
         layout.addWidget(self._rep_label)
         layout.addWidget(self._progress)
-        layout.addWidget(self._grid_plot, stretch=2)
-        layout.addWidget(self._hue_widget, stretch=1)
+        layout.addLayout(top_row, stretch=2)
+        layout.addWidget(self._heat_widget, stretch=1)
 
     def start_session(self, link: SerialLink, settings: dict[str, str], hue_log_path: Path | None) -> None:
         self.detach()
@@ -259,6 +298,9 @@ class GridSessionPage(QWidget):
         self._mean = {"Red": [], "Green": [], "Blue": []}
         for curve in {**self._cum_curves, **self._mean_curves}.values():
             curve.setData([], [])
+        self._heat_data = {c: np.zeros((self._steps, self._steps)) for c in ("Red", "Green", "Blue")}
+        for name, image in self._heat_images.items():
+            image.setImage(self._heat_data[name], levels=_HEATMAP_CLIM)
 
         self._led_a = settings.get("LEDA", "NONE")
         self._led_b = settings.get("LEDB", "NONE")
@@ -286,7 +328,8 @@ class GridSessionPage(QWidget):
             f"baselines {n_start}/{n_end} | hue={'on' if self._hue_enabled else 'off'} | "
             f"{format_led_assignments(settings)}"
         )
-        self._hue_widget.setVisible(self._hue_enabled)
+        self._hue_col_widget.setVisible(self._hue_enabled)
+        self._heat_widget.setVisible(self._hue_enabled)
 
     def detach(self) -> None:
         """Disconnect from the link and close the hue log so a hidden page is inert."""
@@ -308,6 +351,16 @@ class GridSessionPage(QWidget):
             self._link.send("STOP")
         self._flush_trial_mean()
         self._status_label.setText("Stopped")
+
+    def _on_save_figure(self) -> None:
+        plots = {"grid": self._grid_plot}
+        if self._hue_enabled:
+            plots["hue_cumulative"] = self._cum_plot
+            plots["hue_mean"] = self._mean_plot
+            for name, heat_plot in self._heat_plots.items():
+                plots[f"heat_{name.lower()}"] = heat_plot
+        default_name = f"grid_figure_{datetime.now():%Y%m%d_%H%M%S}.png"
+        save_plot_widgets(self, plots, default_name)
 
     def _refresh_scatter(self) -> None:
         spots = []
@@ -333,6 +386,14 @@ class GridSessionPage(QWidget):
         for name, val in (("Red", rs), ("Green", gs), ("Blue", bs)):
             self._mean[name].append(val)
             self._mean_curves[name].setData(self._mean_x, self._mean[name])
+        # `_current` still holds the grid cell of the trial that just ended: the
+        # frame that triggers this flush (first frame of the *next* trial) hasn't
+        # updated it yet — that happens later in the same _on_line call.
+        if self._current is not None:
+            ai, bi = self._current
+            for name, val in (("Red", rs), ("Green", gs), ("Blue", bs)):
+                self._heat_data[name][ai, bi] = val
+                self._heat_images[name].setImage(self._heat_data[name], levels=_HEATMAP_CLIM)
         self._trial_hue_samples = []
 
     def _on_line(self, line: str) -> None:
