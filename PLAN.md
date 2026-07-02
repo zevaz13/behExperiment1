@@ -251,7 +251,8 @@ Test: offscreen test verifies plot and table update on simulated frames.
 **Status: implemented this session, not yet hardware-tested.**
 
 ### M14 — GUI: config screen redesign (stages, labels, visuals)
-
+- [ ] For the visited grid locations. Force the x axis limits to be minLedA to maxLedA,and the y axis limits to be minLedB, maxLedB (these might have different names)
+- [ ] For the heatmaps in the grid-hue, add a new text box that allows to change the color limits in real time. If changed, the maps should change. 
 Design spec: `docs/superpowers/specs/2026-07-02-config-screen-redesign-design.md`
 (brainstormed and approved; read it before starting — this checklist summarizes it).
 

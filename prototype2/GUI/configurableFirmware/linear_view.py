@@ -14,10 +14,8 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtWidgets import (
-    QCheckBox,
     QFileDialog,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QMessageBox,
     QProgressBar,
@@ -30,7 +28,7 @@ from pyqtgraph import PlotWidget, mkPen
 
 from config_io import load_config, save_config
 from figure_export import save_plot_widgets
-from param_form import ParamForm, format_led_assignments
+from param_form import ParamForm, PhaseDiagram, SavingSection, format_led_assignments
 from protocol import FRAME_FIELDS, parse_frame
 from serial_link import SerialLink
 
@@ -67,22 +65,21 @@ class LinearConfigPage(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._baseline: dict[str, str] = {}
-        self._hue_log_path: Path | None = None
 
         self._form = ParamForm(LINEAR_PARAM_KEYS)
+        self._diagram = PhaseDiagram(self._form)
 
         # Data saving is opt-in: hue can be on just to watch the live plots
         # without necessarily wanting a file written every session.
-        self._save_hue_checkbox = QCheckBox("Save hue data to file")
-        self._save_hue_checkbox.setEnabled(False)
-        self._form._widgets["hue"].toggled.connect(self._save_hue_checkbox.setEnabled)
+        self._saving = SavingSection("linear")
+        self._form._widgets["hue"].toggled.connect(self._saving.set_hue_enabled)
 
         load_btn = QPushButton("Load config...")
         load_btn.clicked.connect(self._on_load)
         save_btn = QPushButton("Save config...")
         save_btn.clicked.connect(self._on_save)
         start_btn = QPushButton("Start")
-        start_btn.clicked.connect(self._on_start)
+        start_btn.clicked.connect(self.start_requested)
         back_btn = QPushButton("Back to mode selection")
         back_btn.clicked.connect(self.back_requested)
 
@@ -95,14 +92,15 @@ class LinearConfigPage(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Linear mode configuration"))
         layout.addWidget(self._form)
-        layout.addWidget(self._save_hue_checkbox)
+        layout.addWidget(self._diagram)
+        layout.addWidget(self._saving)
         layout.addLayout(btn_row)
 
     def setup(self, settings: dict[str, str]) -> None:
         self._baseline = settings
-        self._hue_log_path = None
+        self._saving.reset()
         self._form.set_values(settings)
-        self._save_hue_checkbox.setEnabled(bool(self._form.values().get("hue")))
+        self._saving.set_hue_enabled(bool(self._form.values().get("hue")))
 
     def _on_load(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -121,17 +119,6 @@ class LinearConfigPage(QWidget):
         if path:
             save_config(Path(path), self._form.values())
 
-    def _on_start(self) -> None:
-        self._hue_log_path = None
-        if self._form.values().get("hue") and self._save_hue_checkbox.isChecked():
-            name, ok = QInputDialog.getText(self, "Experiment name", "Experiment name (optional):")
-            suffix = f"_{name.strip()}" if ok and name.strip() else ""
-            default_name = f"linearhue_exp{suffix}_{datetime.now():%Y%m%d_%H%M%S}.txt"
-            path, _ = QFileDialog.getSaveFileName(self, "Save hue data log", default_name, "Text files (*.txt)")
-            if path:
-                self._hue_log_path = Path(path)
-        self.start_requested.emit()
-
     def changed_values(self) -> dict[str, int | str]:
         return self._form.changed_values(self._baseline)
 
@@ -140,7 +127,7 @@ class LinearConfigPage(QWidget):
         return {**self._baseline, **changed}
 
     def hue_log_path(self) -> Path | None:
-        return self._hue_log_path
+        return self._saving.hue_log_path()
 
     def detach(self) -> None:
         pass  # nothing attached to a link — config screen only reads GET once at setup()

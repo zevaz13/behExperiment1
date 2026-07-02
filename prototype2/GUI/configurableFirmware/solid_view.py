@@ -30,17 +30,11 @@ from PySide6.QtWidgets import (
 from pyqtgraph import BarGraphItem, PlotWidget
 
 from figure_export import save_plot_widgets
+from param_form import LED_COLORS
 from protocol import FRAME_FIELDS, build_set_command, parse_frame
 from serial_link import SerialLink
 
 LED_ORDER = ("RED", "YELLOW", "GREEN", "BLUE", "CYAN")
-LED_COLORS = {
-    "RED": "#f70404",
-    "YELLOW": "#fabd04",
-    "GREEN": "#b1ff01",
-    "BLUE": "#0493ff",
-    "CYAN": "#50fefe",
-}
 _SET_KEY = {led: f"{led}LED" for led in LED_ORDER}
 
 _DEFAULT_HUE_SCALE = 1000

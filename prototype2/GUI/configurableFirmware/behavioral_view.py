@@ -30,7 +30,7 @@ from pyqtgraph import PlotWidget
 
 from config_io import load_config, save_config
 from figure_export import save_plot_widgets
-from param_form import LED_FRAME_KEY, ParamForm, format_led_assignments
+from param_form import LED_FRAME_KEY, ParamForm, PhaseDiagram, format_led_assignments
 from protocol import parse_frame
 from serial_link import SerialLink
 
@@ -59,6 +59,7 @@ class BehavioralConfigPage(QWidget):
         self._baseline: dict[str, str] = {}
 
         self._form = ParamForm(BEHAVIORAL_PARAM_KEYS)
+        self._diagram = PhaseDiagram(self._form)
 
         load_btn = QPushButton("Load config...")
         load_btn.clicked.connect(self._on_load)
@@ -77,6 +78,7 @@ class BehavioralConfigPage(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Behavioral mode configuration"))
         layout.addWidget(self._form)
+        layout.addWidget(self._diagram)
         layout.addLayout(btn_row)
 
     def setup(self, settings: dict[str, str]) -> None:

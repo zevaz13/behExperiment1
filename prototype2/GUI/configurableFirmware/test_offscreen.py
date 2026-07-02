@@ -498,7 +498,9 @@ def test_linear_hue_log_file_written():
     w, fake = _navigate_to_config("LINEAR", {"steps": "2", "hue": "1"})
     with tempfile.TemporaryDirectory() as tmp:
         log_path = Path(tmp) / "linearhue_exp_test.txt"
-        w._linear_config_page._hue_log_path = log_path
+        saving = w._linear_config_page._saving
+        saving._save_checkbox.setChecked(True)
+        saving._explicit_path = log_path
         w._linear_config_page.start_requested.emit()
 
         fake.inject(_frame(trial=1, hue_r=100, hue_g=200, hue_b=300))
@@ -627,16 +629,16 @@ def test_grid_summary_includes_led_phase_assignments():
 
 def test_linear_hue_save_checkbox_disabled_without_hue():
     w, fake = _navigate_to_config("LINEAR")
-    assert not w._linear_config_page._save_hue_checkbox.isEnabled()
+    assert not w._linear_config_page._saving._save_checkbox.isEnabled()
     w._linear_config_page._form._widgets["hue"].setChecked(True)
-    assert w._linear_config_page._save_hue_checkbox.isEnabled()
+    assert w._linear_config_page._saving._save_checkbox.isEnabled()
     print("  [OK] Linear 'Save hue data to file' checkbox only enabled when hue is on")
 
 
 def test_linear_hue_on_without_save_checkbox_does_not_log():
     """M11.1: hue can be enabled just to watch the live plots, without forcing a file save."""
     w, fake = _navigate_to_config("LINEAR", {"hue": "1"})
-    assert not w._linear_config_page._save_hue_checkbox.isChecked()  # opt-in, defaults off
+    assert not w._linear_config_page._saving._save_checkbox.isChecked()  # opt-in, defaults off
     w._linear_config_page.start_requested.emit()
     assert w._linear_config_page.hue_log_path() is None
     assert w._linear_session_page._log_file is None
@@ -645,9 +647,9 @@ def test_linear_hue_on_without_save_checkbox_does_not_log():
 
 def test_grid_hue_save_checkbox_disabled_without_hue():
     w, fake = _navigate_to_config("GRID")
-    assert not w._grid_config_page._save_hue_checkbox.isEnabled()
+    assert not w._grid_config_page._saving._save_checkbox.isEnabled()
     w._grid_config_page._form._widgets["hue"].setChecked(True)
-    assert w._grid_config_page._save_hue_checkbox.isEnabled()
+    assert w._grid_config_page._saving._save_checkbox.isEnabled()
     print("  [OK] Grid 'Save hue data to file' checkbox only enabled when hue is on")
 
 
