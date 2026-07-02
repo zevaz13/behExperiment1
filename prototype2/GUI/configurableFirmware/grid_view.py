@@ -16,7 +16,9 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QVBoxLayout,
@@ -42,6 +44,8 @@ GRID_PARAM_KEYS = [
 ]
 
 _RGB_PENS = {"Red": mkPen("#f70404"), "Green": mkPen("#b1ff01"), "Blue": mkPen("#0493ff")}
+
+_CONFIG_PREFIX = "gridParamConfig"
 
 
 def _is_baseline_trial(trial: int) -> bool:
@@ -109,12 +113,18 @@ class GridConfigPage(QWidget):
         self._save_hue_checkbox.setEnabled(bool(self._form.values().get("hue")))
 
     def _on_load(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Load Grid config", "", "JSON files (*.json)")
-        if path:
-            self._form.set_values({k: str(v) for k, v in load_config(Path(path)).items()})
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Grid config", "", f"Grid config ({_CONFIG_PREFIX}*.json)"
+        )
+        if not path:
+            return
+        if not Path(path).name.startswith(_CONFIG_PREFIX):
+            QMessageBox.warning(self, "Wrong config file", f"Please select a {_CONFIG_PREFIX}*.json file.")
+            return
+        self._form.set_values({k: str(v) for k, v in load_config(Path(path)).items()})
 
     def _on_save(self) -> None:
-        default_name = f"gridParamConfig_{datetime.now():%Y%m%d_%H%M%S}.json"
+        default_name = f"{_CONFIG_PREFIX}_{datetime.now():%Y%m%d_%H%M%S}.json"
         path, _ = QFileDialog.getSaveFileName(self, "Save Grid config", default_name, "JSON files (*.json)")
         if path:
             save_config(Path(path), self._form.values())
@@ -122,7 +132,9 @@ class GridConfigPage(QWidget):
     def _on_start(self) -> None:
         self._hue_log_path = None
         if self._form.values().get("hue") and self._save_hue_checkbox.isChecked():
-            default_name = f"gridhue_exp_{datetime.now():%Y%m%d_%H%M%S}.txt"
+            name, ok = QInputDialog.getText(self, "Experiment name", "Experiment name (optional):")
+            suffix = f"_{name.strip()}" if ok and name.strip() else ""
+            default_name = f"gridhue_exp{suffix}_{datetime.now():%Y%m%d_%H%M%S}.txt"
             path, _ = QFileDialog.getSaveFileName(self, "Save hue data log", default_name, "Text files (*.txt)")
             if path:
                 self._hue_log_path = Path(path)
@@ -287,6 +299,9 @@ class GridSessionPage(QWidget):
         if self._log_file is not None:
             self._log_file.close()
             self._log_file = None
+
+    def set_status(self, text: str) -> None:
+        self._status_label.setText(text)
 
     def _stop(self) -> None:
         if self._link is not None:

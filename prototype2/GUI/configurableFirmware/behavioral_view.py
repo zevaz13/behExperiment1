@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMessageBox,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -31,6 +32,8 @@ from config_io import load_config, save_config
 from param_form import LED_FRAME_KEY, ParamForm, format_led_assignments
 from protocol import parse_frame
 from serial_link import SerialLink
+
+_CONFIG_PREFIX = "beh_configparams"
 
 BEHAVIORAL_PARAM_KEYS = [
     "freq", "interTrialWait",
@@ -80,12 +83,18 @@ class BehavioralConfigPage(QWidget):
         self._form.set_values(settings)
 
     def _on_load(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Load Behavioral config", "", "JSON files (*.json)")
-        if path:
-            self._form.set_values({k: str(v) for k, v in load_config(Path(path)).items()})
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Behavioral config", "", f"Behavioral config ({_CONFIG_PREFIX}*.json)"
+        )
+        if not path:
+            return
+        if not Path(path).name.startswith(_CONFIG_PREFIX):
+            QMessageBox.warning(self, "Wrong config file", f"Please select a {_CONFIG_PREFIX}*.json file.")
+            return
+        self._form.set_values({k: str(v) for k, v in load_config(Path(path)).items()})
 
     def _on_save(self) -> None:
-        default_name = f"beh_configparams_{datetime.now():%Y%m%d_%H%M%S}.json"
+        default_name = f"{_CONFIG_PREFIX}_{datetime.now():%Y%m%d_%H%M%S}.json"
         path, _ = QFileDialog.getSaveFileName(self, "Save Behavioral config", default_name, "JSON files (*.json)")
         if path:
             save_config(Path(path), self._form.values())
@@ -210,6 +219,9 @@ class BehavioralSessionPage(QWidget):
             except (RuntimeError, TypeError):
                 pass
             self._link = None
+
+    def set_status(self, text: str) -> None:
+        self._status_label.setText(text)
 
     def _press(self) -> None:
         if self._link is not None:

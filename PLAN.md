@@ -204,3 +204,10 @@ Test: offscreen test verifies plot and table update on simulated frames.
 - [x] Added offscreen tests for both cases: zeroed press frame falls back to the cached value; non-zero press frame is trusted directly (regression guard for the M9-era test).
 
 **Status: implemented, all 49 `test_offscreen.py` tests pass. This fix is GUI-only (no reflash needed) — should resolve the issue immediately once you pull the updated `behavioral_view.py`.**
+### M13. Refinement and details
+- Lets make it so for a given mode, we only can load configuration files for that one. Grid can only load files starting with gridParamConfig, linear only linearParamConfig, and behavioral only beh_configparams.
+- The window for the mode selection GUI, solid mode, solid-hue mode, linear mode (not configuration. the experiment itself) should be smaller. 
+- The delay for the slidders now is too big, it could be a little smaller.
+- make the solid-hue, do something to show the button presses.
+- For the linear, grid and behavioral modes, please add a 2 second delay after pressing the start button and the experiment start.
+- When saving data please allow a space for the user to add an experiment name so resulting files would look like for example gridhue_exp_"ExpName"_timestamp.

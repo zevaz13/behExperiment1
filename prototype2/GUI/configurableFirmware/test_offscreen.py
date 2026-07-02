@@ -13,6 +13,7 @@ import sys
 import tempfile
 import traceback
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -23,8 +24,11 @@ from PySide6.QtWidgets import QApplication
 _app = QApplication.instance() or QApplication(sys.argv)
 
 # Import after QApplication exists.
+import behavioral_view  # noqa: E402
+import grid_view  # noqa: E402
+import linear_view  # noqa: E402
 from config_io import load_config, save_config  # noqa: E402
-from main_window import MainWindow  # noqa: E402
+from main_window import START_DELAY_S, MainWindow  # noqa: E402
 from param_form import ParamForm  # noqa: E402
 from protocol import build_mode_command, build_set_command, parse_frame, parse_get_response  # noqa: E402
 
@@ -442,13 +446,18 @@ def test_linear_start_sends_only_changed_params():
     w._linear_config_page._form._widgets["steps"].setValue(5)
     w._linear_config_page.start_requested.emit()
 
-    assert len(fake.sent) == 2, f"Expected SET + START, got {fake.sent}"
+    # M13: START is held back by a countdown; only the SET batch goes out immediately.
+    assert len(fake.sent) == 1, f"Expected only SET before the start countdown, got {fake.sent}"
     assert fake.sent[0] == "SET LEDA RED, steps 5" or fake.sent[0] == "SET steps 5, LEDA RED", \
         f"Unexpected SET batch: {fake.sent[0]}"
-    assert fake.sent[1] == "START"
     assert w._stack.currentWidget() is w._linear_session_page
+    assert w._linear_session_page._status_label.text() == f"Starting in {START_DELAY_S}..."
     assert w._linear_session_page._total_trials == 5  # 0 + 5 steps + 0 baselines
-    print("  [OK] Linear Start sends only the changed params + START, shows the session page")
+
+    QTest.qWait(START_DELAY_S * 1000 + 200)
+    assert fake.sent[-1] == "START"
+    assert w._linear_session_page._status_label.text() == "Running..."
+    print("  [OK] Linear Start sends only the changed params, counts down, then sends START")
 
 
 def test_linear_progress_robust_to_repeated_and_skipped_trials():
@@ -659,10 +668,14 @@ def test_behavioral_start_sends_only_changed_params():
     w._behavioral_config_page._form._widgets["LEDB"].setCurrentText("GREEN")
     w._behavioral_config_page.start_requested.emit()
 
-    assert fake.sent[0] in ("SET LEDA RED, LEDB GREEN", "SET LEDB GREEN, LEDA RED"), f"Unexpected: {fake.sent[0]}"
-    assert fake.sent[1] == "START"
+    # M13: START is held back by a countdown; only the SET batch goes out immediately.
+    assert fake.sent == ["SET LEDA RED, LEDB GREEN"] or fake.sent == ["SET LEDB GREEN, LEDA RED"], \
+        f"Unexpected: {fake.sent}"
     assert w._stack.currentWidget() is w._behavioral_session_page
-    print("  [OK] Behavioral Start sends only the changed params + START, shows the session page")
+
+    QTest.qWait(START_DELAY_S * 1000 + 200)
+    assert fake.sent[-1] == "START"
+    print("  [OK] Behavioral Start sends only the changed params, counts down, then sends START")
 
 
 def test_behavioral_live_marker_and_press_table():
@@ -763,6 +776,96 @@ def test_behavioral_press_uses_fresh_values_when_not_zeroed():
 
 
 # ---------------------------------------------------------------------------
+# M13 refinement tests
+# ---------------------------------------------------------------------------
+
+def test_solid_hue_press_table_and_counter():
+    w = _make_window()
+    fake = _connect(w)
+    w._mode_select_page.mode_chosen.emit("SOLID", True)
+    session = w._solid_view
+    assert not session._press_panel.isHidden(), "Press panel hidden even though hue is enabled"
+    assert session._press_count_label.text() == "Presses: 0"
+
+    fake.inject(_frame(press=1, hue_r=10, hue_g=20, hue_b=30))
+    assert session._press_table.rowCount() == 1
+    row = [session._press_table.item(0, c).text() for c in range(4)]
+    assert row == ["1", "10", "20", "30"], f"Unexpected press row: {row}"
+    assert session._press_count_label.text() == "Presses: 1"
+
+    fake.inject(_frame(press=1, hue_r=40, hue_g=50, hue_b=60))
+    assert session._press_table.rowCount() == 2
+    assert session._press_count_label.text() == "Presses: 2"
+    print("  [OK] Solid-hue press panel shows a running counter and per-press hue table")
+
+
+def test_solid_press_panel_hidden_without_hue():
+    w = _make_window()
+    _connect(w)
+    w._mode_select_page.mode_chosen.emit("SOLID", False)
+    assert w._solid_view._press_panel.isHidden(), "Press panel shown even though hue is disabled"
+    print("  [OK] Solid press panel hidden when hue is disabled")
+
+
+def test_config_load_rejects_wrong_mode_prefix():
+    """M13: each mode's Load button only accepts its own filename prefix
+    (linearParamConfig/gridParamConfig/beh_configparams), so a config saved
+    from a different mode can't be loaded by mistake."""
+    cases = [
+        ("LINEAR", linear_view, "linearParamConfig_test.json"),
+        ("GRID", grid_view, "gridParamConfig_test.json"),
+        ("BEHAVIORAL", behavioral_view, "beh_configparams_test.json"),
+    ]
+    for mode, module, correct_name in cases:
+        w, _fake = _navigate_to_config(mode)
+        config_page = w._config_pages[mode]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            wrong_path = Path(tmp) / "wrongPrefix_test.json"
+            save_config(wrong_path, {"freq": "99"})
+            right_path = Path(tmp) / correct_name
+            save_config(right_path, {"freq": "99"})
+
+            baseline_freq = config_page._form.values()["freq"]
+            with patch.object(module.QFileDialog, "getOpenFileName", return_value=(str(wrong_path), "")), \
+                 patch.object(module.QMessageBox, "warning") as warn:
+                config_page._on_load()
+            assert warn.called, f"{mode}: expected a warning for a wrong-prefix file"
+            assert config_page._form.values()["freq"] == baseline_freq, \
+                f"{mode}: form should be unchanged after a rejected load"
+
+            with patch.object(module.QFileDialog, "getOpenFileName", return_value=(str(right_path), "")):
+                config_page._on_load()
+            assert config_page._form.values()["freq"] == 99, f"{mode}: correct-prefix file should load"
+    print("  [OK] Config load rejects files that don't match the mode's filename prefix")
+
+
+def test_compact_window_size_for_light_pages():
+    """M13: ModeSelect/Solid/Linear-session use a compact window; config
+    screens and the Grid/Behavioral sessions stay maximized."""
+    calls: list[str] = []
+    with patch.object(MainWindow, "showMaximized", lambda self: calls.append("max")), \
+         patch.object(MainWindow, "showNormal", lambda self: calls.append("normal")):
+        w = _make_window()
+        _connect(w)
+        assert calls[-1] == "normal", "ModeSelect should use the compact window"
+
+        w._mode_select_page.mode_chosen.emit("SOLID", False)
+        assert calls[-1] == "normal", "Solid should use the compact window"
+
+        w2, _fake2 = _navigate_to_config("LINEAR")
+        assert calls[-1] == "max", "Linear config screen should stay maximized"
+        w2._linear_config_page.start_requested.emit()
+        assert calls[-1] == "normal", "Linear session screen should use the compact window"
+
+        w3, _fake3 = _navigate_to_config("GRID")
+        assert calls[-1] == "max", "Grid config screen should stay maximized"
+        w3._grid_config_page.start_requested.emit()
+        assert calls[-1] == "max", "Grid session screen should stay maximized"
+    print("  [OK] Compact window applies only to ModeSelect/Solid/Linear-session")
+
+
+# ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
 
@@ -816,6 +919,10 @@ TESTS = [
     test_behavioral_config_save_load_round_trip,
     test_behavioral_press_falls_back_to_last_live_value_when_zeroed,
     test_behavioral_press_uses_fresh_values_when_not_zeroed,
+    test_solid_hue_press_table_and_counter,
+    test_solid_press_panel_hidden_without_hue,
+    test_config_load_rejects_wrong_mode_prefix,
+    test_compact_window_size_for_light_pages,
 ]
 
 

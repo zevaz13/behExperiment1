@@ -6,8 +6,15 @@ Navigation: Connect -> ModeSelect -> per-mode view.
 - Linear/Grid/Behavioral send MODE then GET, and once the full settings
   response arrives, show that mode's config screen (Start). The config
   screen's Start emits start_requested; MainWindow sends the changed-param
-  SET batch + START and switches to the session screen.
+  SET batch, switches to the session screen, and runs a START_DELAY_S
+  countdown (shown via the session page's status label) before sending
+  START, so the researcher has a moment after clicking Start before the
+  experiment actually begins.
 Back from any per-mode view sends STOP and returns to ModeSelect.
+
+Window sizing: ModeSelect, Solid(-hue), and the Linear session screen are
+light on parameters and use a compact window (COMPACT_WINDOW_SIZE); every
+other page (config screens, Grid/Behavioral sessions) stays maximized.
 """
 
 from __future__ import annotations
@@ -36,6 +43,13 @@ from solid_view import SolidView
 
 AUTO_DETECT_RETRY_MS = 500
 AUTO_DETECT_ATTEMPTS_BEFORE_FALLBACK = 6
+
+# M13: ModeSelect/Solid/Linear-session are param-light, so they use a compact
+# window instead of the full-screen default (which exists for the
+# param-heavy config screens, per M12.1).
+COMPACT_WINDOW_SIZE = (900, 650)
+
+START_DELAY_S = 2
 
 MODES = ("SOLID", "LINEAR", "GRID", "BEHAVIORAL")
 MODE_LABELS = {
@@ -255,6 +269,8 @@ class MainWindow(QMainWindow):
         self._active_page: QWidget | None = None
         self._get_buffer: list[str] = []
         self._pending_config_mode: str | None = None
+        self._countdown_timer: QTimer | None = None
+        self._countdown_remaining = 0
 
         # mode -> (config page, session page, start handler)
         self._config_pages = {
@@ -262,6 +278,9 @@ class MainWindow(QMainWindow):
             "GRID": self._grid_config_page,
             "BEHAVIORAL": self._behavioral_config_page,
         }
+
+        # Pages light enough on parameters to not need the full-screen default.
+        self._compact_pages = {self._mode_select_page, self._solid_view, self._linear_session_page}
 
         self._connect_page.connected.connect(self._on_connected)
         self._mode_select_page.mode_chosen.connect(self._on_mode_chosen)
@@ -280,10 +299,18 @@ class MainWindow(QMainWindow):
 
     # --- Navigation handlers ------------------------------------------------
 
+    def _switch_to(self, page: QWidget) -> None:
+        if page in self._compact_pages:
+            self.showNormal()
+            self.resize(*COMPACT_WINDOW_SIZE)
+        else:
+            self.showMaximized()
+        self._stack.setCurrentWidget(page)
+
     def _on_connected(self, link: SerialLink) -> None:
         self._link = link
         self._link.connection_lost.connect(self._on_connection_lost)
-        self._stack.setCurrentWidget(self._mode_select_page)
+        self._switch_to(self._mode_select_page)
 
     def _on_mode_chosen(self, mode: str, hue_enabled: bool) -> None:
         if self._link is None:
@@ -295,7 +322,7 @@ class MainWindow(QMainWindow):
             self._link.send("START")
             self._solid_view.start_session(self._link, hue_enabled)
             self._active_page = self._solid_view
-            self._stack.setCurrentWidget(self._solid_view)
+            self._switch_to(self._solid_view)
         else:
             self._pending_config_mode = mode
             self._get_buffer = []
@@ -313,7 +340,7 @@ class MainWindow(QMainWindow):
         self._pending_config_mode = None
         config_page.setup(settings)
         self._active_page = config_page
-        self._stack.setCurrentWidget(config_page)
+        self._switch_to(config_page)
 
     def _on_linear_start(self) -> None:
         self._start_experiment(self._linear_config_page, self._linear_session_page)
@@ -328,10 +355,10 @@ class MainWindow(QMainWindow):
         changed = config_page.changed_values()
         if changed:
             self._link.send(build_set_command(changed))
-        self._link.send("START")
         self._behavioral_session_page.start_session(self._link, config_page.full_settings())
         self._active_page = self._behavioral_session_page
-        self._stack.setCurrentWidget(self._behavioral_session_page)
+        self._switch_to(self._behavioral_session_page)
+        self._run_start_countdown(self._behavioral_session_page)
 
     def _start_experiment(self, config_page, session_page) -> None:
         if self._link is None:
@@ -339,18 +366,50 @@ class MainWindow(QMainWindow):
         changed = config_page.changed_values()
         if changed:
             self._link.send(build_set_command(changed))
-        self._link.send("START")
         session_page.start_session(self._link, config_page.full_settings(), config_page.hue_log_path())
         self._active_page = session_page
-        self._stack.setCurrentWidget(session_page)
+        self._switch_to(session_page)
+        self._run_start_countdown(session_page)
+
+    def _run_start_countdown(self, session_page) -> None:
+        """Shows a 'Starting in Ns...' countdown on session_page, then sends START.
+
+        Runs after SET so the firmware has already applied the new params
+        while idle; only the START (and the actual experiment) is delayed.
+        """
+        self._cancel_countdown()
+        self._countdown_remaining = START_DELAY_S
+        session_page.set_status(f"Starting in {self._countdown_remaining}...")
+        timer = QTimer(self)
+        timer.setInterval(1000)
+        timer.timeout.connect(lambda: self._on_countdown_tick(session_page))
+        self._countdown_timer = timer
+        timer.start()
+
+    def _on_countdown_tick(self, session_page) -> None:
+        self._countdown_remaining -= 1
+        if self._countdown_remaining <= 0:
+            self._cancel_countdown()
+            if self._link is not None:
+                self._link.send("START")
+            session_page.set_status("Running...")
+        else:
+            session_page.set_status(f"Starting in {self._countdown_remaining}...")
+
+    def _cancel_countdown(self) -> None:
+        if self._countdown_timer is not None:
+            self._countdown_timer.stop()
+            self._countdown_timer.deleteLater()
+            self._countdown_timer = None
 
     def _on_back_requested(self) -> None:
+        self._cancel_countdown()
         if self._link is not None:
             self._link.send("STOP")
         if self._active_page is not None:
             self._active_page.detach()
             self._active_page = None
-        self._stack.setCurrentWidget(self._mode_select_page)
+        self._switch_to(self._mode_select_page)
 
     # --- Connection lifecycle ------------------------------------------------
 
@@ -358,9 +417,10 @@ class MainWindow(QMainWindow):
         """Teensy unplugged or port died: tear down and return to the Connect page."""
         self._teardown_link()
         self._connect_page.restart()
-        self._stack.setCurrentWidget(self._connect_page)
+        self._switch_to(self._connect_page)
 
     def _teardown_link(self) -> None:
+        self._cancel_countdown()
         if self._active_page is not None:
             self._active_page.detach()
             self._active_page = None

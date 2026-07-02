@@ -4,14 +4,25 @@ Solid has no config screen (see design spec); MainWindow sends MODE SOLID
 (+ SET hue 1, if chosen on ModeSelectPage) and START before switching here, so
 sliders are live immediately. Each slider sends SET <COLOR>LED <value> on
 change. Incoming FRAME@ lines drive the hue bar plot and, while hue is active,
-append a snapshot row every time Press=1 (for saving later, once that
-milestone lands).
+append a snapshot row every time Press=1 to both an in-memory log (for saving
+later, once that milestone lands) and a visible press-count/table panel.
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import QTimer, Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QSpinBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QPushButton,
+    QSlider,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from pyqtgraph import BarGraphItem, PlotWidget
 
 from protocol import build_set_command, parse_frame
@@ -32,7 +43,7 @@ _DEFAULT_HUE_SCALE = 1000
 # M9.2: a fast slider drag can fire dozens of valueChanged events per second; sending
 # a SET for each one floods the serial link and makes everything feel laggy. Debounce
 # to one SET per pause in motion, and throttle the hue plot's redraw rate similarly.
-_SET_DEBOUNCE_MS = 100
+_SET_DEBOUNCE_MS = 50
 _HUE_REFRESH_MS = 300
 
 
@@ -147,12 +158,25 @@ class SolidView(QWidget):
         scale_row.addWidget(self._hue_scale_spin)
         self._hue_controls.setVisible(False)
 
+        self._press_count_label = QLabel("Presses: 0")
+        self._press_table = QTableWidget(0, 4)
+        self._press_table.setHorizontalHeaderLabels(["Press #", "R", "G", "B"])
+        self._press_table.verticalHeader().setVisible(False)
+        self._press_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._press_table.setMaximumHeight(160)
+        self._press_panel = QWidget()
+        press_col = QVBoxLayout(self._press_panel)
+        press_col.addWidget(self._press_count_label)
+        press_col.addWidget(self._press_table)
+        self._press_panel.setVisible(False)
+
         back_btn = QPushButton("Back to mode selection")
         back_btn.clicked.connect(self.back_requested)
 
         hue_col = QVBoxLayout()
         hue_col.addWidget(self._hue_controls)
         hue_col.addWidget(self._hue_plot)
+        hue_col.addWidget(self._press_panel)
 
         body = QHBoxLayout()
         body.addLayout(sliders_row, stretch=1)
@@ -171,6 +195,9 @@ class SolidView(QWidget):
         self._latest_hue = None
         self._hue_plot.setVisible(hue_enabled)
         self._hue_controls.setVisible(hue_enabled)
+        self._press_panel.setVisible(hue_enabled)
+        self._press_count_label.setText("Presses: 0")
+        self._press_table.setRowCount(0)
         if hue_enabled:
             self._hue_refresh_timer.start()
         else:
@@ -212,3 +239,12 @@ class SolidView(QWidget):
         self._latest_hue = (frame["HUE_R"], frame["HUE_G"], frame["HUE_B"])
         if frame["Press"] == 1:
             self._press_log.append(dict(frame))
+            self._add_press_row(frame)
+
+    def _add_press_row(self, frame: dict) -> None:
+        row = self._press_table.rowCount()
+        self._press_table.insertRow(row)
+        for col, val in enumerate((row + 1, frame["HUE_R"], frame["HUE_G"], frame["HUE_B"])):
+            self._press_table.setItem(row, col, QTableWidgetItem(str(val)))
+        self._press_table.scrollToBottom()
+        self._press_count_label.setText(f"Presses: {row + 1}")
