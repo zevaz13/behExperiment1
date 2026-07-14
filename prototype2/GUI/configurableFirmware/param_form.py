@@ -453,7 +453,6 @@ class SavingSection(QWidget):
         self._explicit_path: Path | None = None
 
         self._save_checkbox = QCheckBox("Save hue data to file")
-        self._save_checkbox.setEnabled(False)
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("optional")
         self._path_label = QLabel("(default location)")
@@ -473,8 +472,11 @@ class SavingSection(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(box)
 
+        # The whole section is unavailable until the hue sensor is enabled.
+        self.setEnabled(False)
+
     def set_hue_enabled(self, enabled: bool) -> None:
-        self._save_checkbox.setEnabled(enabled)
+        self.setEnabled(enabled)
 
     def reset(self) -> None:
         self._explicit_path = None

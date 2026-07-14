@@ -53,7 +53,7 @@ _RGB_PENS = {"Red": mkPen("#f70404"), "Green": mkPen("#b1ff01"), "Blue": mkPen("
 _CONFIG_PREFIX = "gridParamConfig"
 
 _HEATMAP_COLORS = {"Red": "#DA2C43", "Green": "#ACE1AF", "Blue": "#89CFF0"}
-_HEATMAP_CLIM = (0, 10000)
+_HEATMAP_CLIM = (0, 3500)
 
 
 def _heat_colormap(hex_color: str) -> ColorMap:
@@ -180,6 +180,9 @@ class GridSessionPage(QWidget):
         self._steps = 0
 
         self._total_trials = 0
+        self._n_start = 0
+        self._n_end = 0
+        self._n_exp = 0
         self._seen_trials: set[int] = set()
         self._last_trial: int | None = None
         self._trial_hue_samples: list[tuple[int, int, int]] = []
@@ -294,6 +297,9 @@ class GridSessionPage(QWidget):
         n_start = int(settings.get("nBaselinesStart", 0))
         n_end = int(settings.get("nBaselinesEnd", 0))
         self._steps = int(settings.get("steps", 10))
+        self._n_start = n_start
+        self._n_end = n_end
+        self._n_exp = self._steps * self._steps
         self._total_trials = n_start + self._steps * self._steps + n_end
         self._seen_trials = set()
         self._last_trial = None
@@ -304,6 +310,7 @@ class GridSessionPage(QWidget):
         self._mean = {"Red": [], "Green": [], "Blue": []}
         for curve in {**self._cum_curves, **self._mean_curves}.values():
             curve.setData([], [])
+        self._apply_mean_axis()
         self._heat_data = {c: np.zeros((self._steps, self._steps)) for c in ("Red", "Green", "Blue")}
         for name, image in self._heat_images.items():
             image.setImage(self._heat_data[name], levels=self._heat_clim)
@@ -389,20 +396,45 @@ class GridSessionPage(QWidget):
                 spots.append({"pos": (a_val, b_val), "brush": brush, "size": size, "pen": None})
         self._scatter.setData(spots)
 
+    def _mean_x_for(self, trial: int) -> int:
+        """Map a trial number to its x-slot on the mean-per-step plot.
+
+        Stimulus trials keep their number (1..N, N=steps*steps). Baselines get
+        their own slots outside that range: start baselines at -n_start..-1
+        (left of trial 1), end baselines at N+1..N+n_end (right of trial N).
+        """
+        if not _is_baseline_trial(trial):
+            return trial
+        idx = trial - 1001  # 0-based order across start-then-end baselines
+        if idx < self._n_start:
+            return idx - self._n_start
+        return self._n_exp + 1 + (idx - self._n_start)
+
+    def _apply_mean_axis(self) -> None:
+        """Label baseline slots B1, B2, ... (globally, start then end) and the
+        stimulus trials with their numbers (a capped subset when many)."""
+        ticks = [(i - self._n_start, f"B{i + 1}") for i in range(self._n_start)]
+        n = self._n_exp
+        stride = max(1, n // 12)
+        ticks += [(i, str(i)) for i in range(1, n + 1, stride)]
+        ticks += [(n + 1 + e, f"B{self._n_start + e + 1}") for e in range(self._n_end)]
+        self._mean_plot.getAxis("bottom").setTicks([ticks])
+
     def _flush_trial_mean(self) -> None:
-        if not self._trial_hue_samples or self._last_trial is None or _is_baseline_trial(self._last_trial):
+        if not self._trial_hue_samples or self._last_trial is None:
             self._trial_hue_samples = []
             return
         n = len(self._trial_hue_samples)
         rs, gs, bs = (sum(v) / n for v in zip(*self._trial_hue_samples))
-        self._mean_x.append(self._last_trial)
+        self._mean_x.append(self._mean_x_for(self._last_trial))
         for name, val in (("Red", rs), ("Green", gs), ("Blue", bs)):
             self._mean[name].append(val)
             self._mean_curves[name].setData(self._mean_x, self._mean[name])
+        # Heatmap cells are stimulus-only (baselines map to no grid cell).
         # `_current` still holds the grid cell of the trial that just ended: the
         # frame that triggers this flush (first frame of the *next* trial) hasn't
         # updated it yet — that happens later in the same _on_line call.
-        if self._current is not None:
+        if not _is_baseline_trial(self._last_trial) and self._current is not None:
             ai, bi = self._current
             for name, val in (("Red", rs), ("Green", gs), ("Blue", bs)):
                 self._heat_data[name][ai, bi] = val
@@ -452,8 +484,7 @@ class GridSessionPage(QWidget):
             for name in ("Red", "Green", "Blue"):
                 self._cum[name].append(frame[f"HUE_{name[0]}"])
                 self._cum_curves[name].setData(self._cum_x, self._cum[name])
-            if not _is_baseline_trial(trial):
-                self._trial_hue_samples.append((frame["HUE_R"], frame["HUE_G"], frame["HUE_B"]))
+            self._trial_hue_samples.append((frame["HUE_R"], frame["HUE_G"], frame["HUE_B"]))
 
         if self._log_file is not None:
             self._log_file.write(" ".join(str(frame[f]) for f in FRAME_FIELDS) + "\n")

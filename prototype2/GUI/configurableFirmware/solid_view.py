@@ -37,7 +37,7 @@ from serial_link import SerialLink
 LED_ORDER = ("RED", "YELLOW", "GREEN", "BLUE", "CYAN")
 _SET_KEY = {led: f"{led}LED" for led in LED_ORDER}
 
-_DEFAULT_HUE_SCALE = 1000
+_DEFAULT_HUE_SCALE = 5000
 
 # M9.2: a fast slider drag can fire dozens of valueChanged events per second; sending
 # a SET for each one floods the serial link and makes everything feel laggy. Debounce

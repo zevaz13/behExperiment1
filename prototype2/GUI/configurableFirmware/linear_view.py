@@ -150,6 +150,9 @@ class LinearSessionPage(QWidget):
         self._log_file = None
 
         self._total_trials = 0
+        self._n_start = 0
+        self._n_end = 0
+        self._n_exp = 0
         self._seen_trials: set[int] = set()
         self._last_trial: int | None = None
         self._trial_hue_samples: list[tuple[int, int, int]] = []
@@ -218,6 +221,9 @@ class LinearSessionPage(QWidget):
         n_start = int(settings.get("nBaselinesStart", 0))
         n_end = int(settings.get("nBaselinesEnd", 0))
         steps = int(settings.get("steps", 10))
+        self._n_start = n_start
+        self._n_end = n_end
+        self._n_exp = steps
         self._total_trials = n_start + steps + n_end
         self._seen_trials = set()
         self._last_trial = None
@@ -228,6 +234,7 @@ class LinearSessionPage(QWidget):
         self._mean = {"Red": [], "Green": [], "Blue": []}
         for curve in {**self._cum_curves, **self._mean_curves}.values():
             curve.setData([], [])
+        self._apply_mean_axis()
 
         self._progress.setRange(0, self._total_trials)
         self._progress.setValue(0)
@@ -270,13 +277,37 @@ class LinearSessionPage(QWidget):
         default_name = f"linear_figure_{datetime.now():%Y%m%d_%H%M%S}.png"
         save_plot_widgets(self, {"hue_cumulative": self._cum_plot, "hue_mean": self._mean_plot}, default_name)
 
+    def _mean_x_for(self, trial: int) -> int:
+        """Map a trial number to its x-slot on the mean-per-step plot.
+
+        Experimental steps keep their number (1..N). Baselines get their own
+        slots outside that range: start baselines sit at -n_start..-1 (left of
+        step 1), end baselines at N+1..N+n_end (right of step N).
+        """
+        if not _is_baseline_trial(trial):
+            return trial
+        idx = trial - 1001  # 0-based order across start-then-end baselines
+        if idx < self._n_start:
+            return idx - self._n_start
+        return self._n_exp + 1 + (idx - self._n_start)
+
+    def _apply_mean_axis(self) -> None:
+        """Label baseline slots B1, B2, ... (globally, start then end) and the
+        experimental steps with their numbers (a capped subset when many)."""
+        ticks = [(i - self._n_start, f"B{i + 1}") for i in range(self._n_start)]
+        n = self._n_exp
+        stride = max(1, n // 12)
+        ticks += [(i, str(i)) for i in range(1, n + 1, stride)]
+        ticks += [(n + 1 + e, f"B{self._n_start + e + 1}") for e in range(self._n_end)]
+        self._mean_plot.getAxis("bottom").setTicks([ticks])
+
     def _flush_trial_mean(self) -> None:
-        if not self._trial_hue_samples or self._last_trial is None or _is_baseline_trial(self._last_trial):
+        if not self._trial_hue_samples or self._last_trial is None:
             self._trial_hue_samples = []
             return
         n = len(self._trial_hue_samples)
         rs, gs, bs = (sum(v) / n for v in zip(*self._trial_hue_samples))
-        self._mean_x.append(self._last_trial)
+        self._mean_x.append(self._mean_x_for(self._last_trial))
         for name, val in (("Red", rs), ("Green", gs), ("Blue", bs)):
             self._mean[name].append(val)
             self._mean_curves[name].setData(self._mean_x, self._mean[name])
@@ -308,8 +339,7 @@ class LinearSessionPage(QWidget):
             for name in ("Red", "Green", "Blue"):
                 self._cum[name].append(frame[f"HUE_{name[0]}"])
                 self._cum_curves[name].setData(self._cum_x, self._cum[name])
-            if not _is_baseline_trial(trial):
-                self._trial_hue_samples.append((frame["HUE_R"], frame["HUE_G"], frame["HUE_B"]))
+            self._trial_hue_samples.append((frame["HUE_R"], frame["HUE_G"], frame["HUE_B"]))
 
         if self._log_file is not None:
             self._log_file.write(" ".join(str(frame[f]) for f in FRAME_FIELDS) + "\n")

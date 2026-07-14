@@ -361,4 +361,45 @@ Two more rounds of refinement requested after trying M14 on hardware:
      removal — fixed by also calling `widget.setParent(None)` immediately.
    - No tests added for this follow-up round, per explicit instruction.
 
-**Status: implemented, committed (`df06880`), tested by the user — confirmed working, "everything looks great."**
+**Status: implemented, committed (`df06880`), tested by the user — confirmed working, "everything looks great."**'
+
+### M15 - refining details per mode
+
+Grouped by kind of change rather than by mode, so the mechanical tweaks can
+land quickly and the open design question can be handled separately.
+
+#### A. Default-value tweaks (trivial)
+- [x] Solid-hue: default "Hue scale max" 1000 -> 5000 (`solid_view.py`
+      `_DEFAULT_HUE_SCALE`).
+- [x] Grid-hue: default "Heatmap color max" 10000 -> 3500 (`grid_view.py`
+      `_HEATMAP_CLIM`) — 10000 made the colors too dim.
+
+#### B. Saving-section gating (small UI)
+- [x] Linear config: disable the Saving section until "Enable hue sensor" is
+      checked.
+- [x] Grid config: same — Saving section only enabled when hue is enabled.
+      Done in `param_form.py` `SavingSection`: `set_hue_enabled()` now disables
+      the whole section widget (not just the checkbox); starts disabled.
+
+#### C. Mean-per-step plot: include baselines (logic fix)
+- [x] Linear session (hue): the "Hue - mean per step" plot now adds a point for
+      each baseline trial. Baselines get their own labeled x-slots outside the
+      1..N step range: start baselines B1,B2,... at x=-n_start..-1 (left of step
+      1), end baselines continue the numbering (B3,B4,...) at x=N+1..N+n_end
+      (right of step N). Custom bottom-axis tick labels via `_apply_mean_axis()`;
+      trial->x mapping via `_mean_x_for()`.
+- [x] Grid session (hue): same fix as Linear (N = steps*steps). Heatmap cell
+      fill stays stimulus-only (baselines map to no grid cell).
+
+- [ ] The last baseline is not completely logged in the plots (linear and grid), until the user presses stop. It should be done automatically.
+
+#### D. Metadata saving + linking (open design — brainstorm first)
+- [ ] Find a way to save experiment metadata (the same info as the save-config
+      JSON: frequency, trial length, LED assignments, etc.) and link it to the
+      resulting saved experiment data so a saved dataset can be traced back to
+      the config that produced it. Approach undecided — spans Linear/Grid/
+      Behavioral.
+- [ ] Behavioral: add an option to save the press table when it is non-empty.
+      The saved table should include the whole frame received by the GUI (with
+      LED configuration), and reuse whatever metadata-saving approach is
+      decided above.
