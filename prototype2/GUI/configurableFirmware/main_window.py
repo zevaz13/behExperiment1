@@ -352,7 +352,9 @@ class MainWindow(QMainWindow):
         changed = config_page.changed_values()
         if changed:
             self._link.send(build_set_command(changed))
-        session_page.start_session(self._link, config_page.full_settings(), config_page.hue_log_path())
+        session_page.start_session(
+            self._link, config_page.full_settings(), config_page.hue_log_path(), config_page.experiment_name()
+        )
         self._active_page = session_page
         self._switch_to(session_page)
         self._run_start_countdown(session_page)

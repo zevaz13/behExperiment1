@@ -30,6 +30,7 @@ from config_io import load_config, save_config
 from figure_export import save_plot_widgets
 from param_form import ParamForm, PhaseDiagram, SavingSection, format_led_assignments
 from protocol import FRAME_FIELDS, parse_frame
+from run_export import build_metadata, save_metadata
 from serial_link import SerialLink
 
 LINEAR_PARAM_KEYS = [
@@ -129,6 +130,9 @@ class LinearConfigPage(QWidget):
     def hue_log_path(self) -> Path | None:
         return self._saving.hue_log_path()
 
+    def experiment_name(self) -> str:
+        return self._saving.experiment_name()
+
     def detach(self) -> None:
         pass  # nothing attached to a link — config screen only reads GET once at setup()
 
@@ -207,7 +211,9 @@ class LinearSessionPage(QWidget):
         layout.addWidget(self._progress)
         layout.addWidget(self._hue_widget, stretch=1)
 
-    def start_session(self, link: SerialLink, settings: dict[str, str], hue_log_path: Path | None) -> None:
+    def start_session(
+        self, link: SerialLink, settings: dict[str, str], hue_log_path: Path | None, experiment_name: str = ""
+    ) -> None:
         self.detach()
         self._link = link
         self._link.line_received.connect(self._on_line)
@@ -218,6 +224,8 @@ class LinearSessionPage(QWidget):
         if hue_log_path is not None:
             self._log_file = hue_log_path.open("w")
             self._log_file.write(" ".join(FRAME_FIELDS) + "\n")
+            # Sidecar metadata (same filename stem) links the .txt data to its config.
+            save_metadata(hue_log_path.with_suffix(".json"), build_metadata("linear", settings, experiment_name))
 
         n_start = int(settings.get("nBaselinesStart", 0))
         n_end = int(settings.get("nBaselinesEnd", 0))

@@ -8,6 +8,7 @@ Run (from project root, WSL/Linux):
 No hardware, no real serial port — FakeSerialLink replaces SerialLink.
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -31,7 +32,7 @@ import solid_view  # noqa: E402
 from config_io import load_config, save_config  # noqa: E402
 from main_window import START_DELAY_S, MainWindow  # noqa: E402
 from param_form import ParamForm  # noqa: E402
-from protocol import build_mode_command, build_set_command, parse_frame, parse_get_response  # noqa: E402
+from protocol import FRAME_FIELDS, build_mode_command, build_set_command, parse_frame, parse_get_response  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -340,11 +341,11 @@ def test_hue_plot_range_fixed_not_auto():
     vb = w._solid_view._hue_plot.getViewBox()
     assert vb.autoRangeEnabled() == [False, False], \
         f"Hue plot should have auto-range disabled on both axes, got {vb.autoRangeEnabled()}"
-    assert vb.viewRange()[1] == [0.0, 1000.0], \
-        f"Default hue Y-range should be [0, 1000], got {vb.viewRange()[1]}"
+    assert vb.viewRange()[1] == [0.0, 5000.0], \
+        f"Default hue Y-range should be [0, 5000], got {vb.viewRange()[1]}"
 
     fake.inject(_frame(hue_r=50000, hue_g=1, hue_b=1))
-    assert vb.viewRange()[1] == [0.0, 1000.0], \
+    assert vb.viewRange()[1] == [0.0, 5000.0], \
         "A large hue value must not change the (now fixed) view range"
     print("  [OK] Hue plot range is fixed, not auto-scaling, and unaffected by frame values")
 
@@ -513,7 +514,12 @@ def test_linear_hue_log_file_written():
         lines = log_path.read_text().splitlines()
         assert lines[0].split()[0] == "TrialNumber"
         assert lines[1].split()[0] == "1"
-    print("  [OK] Linear hue log file is written with a header and one row per frame")
+
+        # Sidecar metadata JSON (same stem) links the .txt data to its config.
+        meta = json.loads(log_path.with_suffix(".json").read_text())
+        assert meta["mode"] == "linear"
+        assert str(meta["steps"]) == "2" and str(meta["hue"]) == "1"
+    print("  [OK] Linear hue log: .txt data + sidecar .json metadata written")
 
 
 def test_linear_back_sends_stop():
@@ -885,14 +891,15 @@ def test_solid_save_press_log_writes_full_frame():
     fake.inject(_frame(trial=1, red=10, press=1, hue_r=20, hue_g=30, hue_b=40))
 
     with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "presses.txt"
+        path = Path(tmp) / "presses.json"
         with patch.object(solid_view.QFileDialog, "getSaveFileName", return_value=(str(path), "")):
             session._on_save_press_log()
-        lines = path.read_text().splitlines()
-        assert lines[0].split()[0] == "TrialNumber"
-        row = lines[1].split()
-        assert row[0] == "1" and "10" in row, f"Expected trial/LED values in row, got {row}"
-    print("  [OK] Solid-hue Save press data writes the full frame (LED values + hue) per press")
+        d = json.loads(path.read_text())
+        assert d["columns"] == list(FRAME_FIELDS)
+        assert d["metadata"]["mode"] == "solid"
+        row = d["data"][0]
+        assert row[0] == 1 and 10 in row, f"Expected trial/LED values in row, got {row}"
+    print("  [OK] Solid-hue Save press data writes combined JSON (metadata + full frames)")
 
 
 def test_linear_save_figure_visibility_and_contents():
@@ -936,6 +943,37 @@ def test_behavioral_save_figure_exports_scatter_plot():
         args, _ = save_fig.call_args
         assert set(args[1].keys()) == {"scatter"}
     print("  [OK] Behavioral Save figure exports the scatter plot")
+
+
+def test_behavioral_save_press_log_writes_combined_json():
+    w, fake = _navigate_to_config("BEHAVIORAL")
+    w._behavioral_config_page._form._widgets["LEDA"].setCurrentText("RED")
+    w._behavioral_config_page._form._widgets["LEDB"].setCurrentText("GREEN")
+    w._behavioral_config_page.start_requested.emit()
+    session = w._behavioral_session_page
+
+    # A live frame carries the real intensities: background cyan 2300, LEDA (red)
+    # 578, LEDB (green) 976. The firmware then zeroes all LEDs at press time, so
+    # the Press=1 frame arrives all-zero.
+    fake.inject(_frame(trial=1, red=578, green=976, cyan=2300, leda="RED", ledb="GREEN", press=0))
+    fake.inject(_frame(trial=1, red=0, green=0, cyan=0, leda="RED", ledb="GREEN", press=1))
+    assert len(session._press_log) == 1
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "beh_presses.json"
+        with patch.object(behavioral_view.QInputDialog, "getText", return_value=("myexp", True)), \
+             patch.object(behavioral_view.QFileDialog, "getSaveFileName", return_value=(str(path), "")):
+            session._on_save_press_log()
+        d = json.loads(path.read_text())
+        assert d["columns"] == list(FRAME_FIELDS)
+        assert d["metadata"]["mode"] == "behavioral"
+        assert d["metadata"]["experiment_name"] == "myexp"
+        # The saved row holds the real pre-press intensities, not the zeroed press frame.
+        row = dict(zip(d["columns"], d["data"][0]))
+        assert row["Red"] == 578 and row["Green"] == 976 and row["Cyan"] == 2300, row
+        assert row["LEDA"] == "RED" and row["LEDB"] == "GREEN"
+        assert row["Press"] == 1
+    print("  [OK] Behavioral Save press data: saved frame keeps real LED intensities, not zeroed press frame")
 
 
 # ---------------------------------------------------------------------------
@@ -998,6 +1036,7 @@ TESTS = [
     test_all_pages_are_maximized,
     test_solid_save_figure_exports_hue_plot,
     test_solid_save_press_log_writes_full_frame,
+    test_behavioral_save_press_log_writes_combined_json,
     test_linear_save_figure_visibility_and_contents,
     test_grid_save_figure_contents_depend_on_hue,
     test_behavioral_save_figure_exports_scatter_plot,

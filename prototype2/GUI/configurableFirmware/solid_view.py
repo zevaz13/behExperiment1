@@ -12,6 +12,7 @@ and a visible press-count/table panel. "Save figure..." exports the hue plot.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import (
@@ -32,6 +33,7 @@ from pyqtgraph import BarGraphItem, PlotWidget
 from figure_export import save_plot_widgets
 from param_form import LED_COLORS
 from protocol import FRAME_FIELDS, build_set_command, parse_frame
+from run_export import build_metadata, save_run
 from serial_link import SerialLink
 
 LED_ORDER = ("RED", "YELLOW", "GREEN", "BLUE", "CYAN")
@@ -254,18 +256,17 @@ class SolidView(QWidget):
 
     def _on_save_press_log(self) -> None:
         """Writes the full per-press record (all LED values + hue params, not
-        just the R/G/B columns shown in the table) to a text file, same
-        space-separated FRAME_FIELDS format as the Linear/Grid hue logs."""
+        just the R/G/B columns shown in the table) plus the run's metadata to a
+        single combined JSON file."""
         if not self._press_log:
             return
-        default_name = f"solidhue_presses_{datetime.now():%Y%m%d_%H%M%S}.txt"
-        path, _ = QFileDialog.getSaveFileName(self, "Save press data", default_name, "Text files (*.txt)")
+        default_name = f"solidhue_presses_{datetime.now():%Y%m%d_%H%M%S}.json"
+        path, _ = QFileDialog.getSaveFileName(self, "Save press data", default_name, "JSON files (*.json)")
         if not path:
             return
-        with open(path, "w") as f:
-            f.write(" ".join(FRAME_FIELDS) + "\n")
-            for frame in self._press_log:
-                f.write(" ".join(str(frame[field]) for field in FRAME_FIELDS) + "\n")
+        rows = [[frame[field] for field in FRAME_FIELDS] for frame in self._press_log]
+        metadata = build_metadata("solid", {"hue": "1" if self._hue_enabled else "0"})
+        save_run(Path(path), metadata, FRAME_FIELDS, rows)
 
     def _add_press_row(self, frame: dict) -> None:
         row = self._press_table.rowCount()

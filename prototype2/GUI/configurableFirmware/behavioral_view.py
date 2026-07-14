@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -31,7 +32,8 @@ from pyqtgraph import PlotWidget
 from config_io import load_config, save_config
 from figure_export import save_plot_widgets
 from param_form import LED_FRAME_KEY, ParamForm, PhaseDiagram, format_led_assignments
-from protocol import parse_frame
+from protocol import FRAME_FIELDS, parse_frame
+from run_export import build_metadata, save_run
 from serial_link import SerialLink
 
 _CONFIG_PREFIX = "beh_configparams"
@@ -133,6 +135,8 @@ class BehavioralSessionPage(QWidget):
         self._press_count = 0
         self._last_live_a: int | None = None
         self._last_live_b: int | None = None
+        self._last_live_frame: dict | None = None
+        self._press_log: list[dict] = []
 
         self._params_label = QLabel("")
         self._params_label.setWordWrap(True)
@@ -144,12 +148,15 @@ class BehavioralSessionPage(QWidget):
         stop_btn.clicked.connect(self._stop)
         save_figure_btn = QPushButton("Save figure...")
         save_figure_btn.clicked.connect(self._on_save_figure)
+        save_press_btn = QPushButton("Save press data...")
+        save_press_btn.clicked.connect(self._on_save_press_log)
         back_btn = QPushButton("Back to mode selection")
         back_btn.clicked.connect(self.back_requested)
         btn_row = QHBoxLayout()
         btn_row.addWidget(press_btn)
         btn_row.addWidget(stop_btn)
         btn_row.addWidget(save_figure_btn)
+        btn_row.addWidget(save_press_btn)
         btn_row.addWidget(back_btn)
 
         self._plot = PlotWidget()
@@ -196,6 +203,8 @@ class BehavioralSessionPage(QWidget):
         self._press_count = 0
         self._last_live_a = None
         self._last_live_b = None
+        self._last_live_frame = None
+        self._press_log.clear()
         self._current_marker.setData([], [])
         self._press_marks.setData([], [])
         self._median_marker.setData([], [])
@@ -242,6 +251,24 @@ class BehavioralSessionPage(QWidget):
         default_name = f"behavioral_figure_{datetime.now():%Y%m%d_%H%M%S}.png"
         save_plot_widgets(self, {"scatter": self._plot}, default_name)
 
+    def _on_save_press_log(self) -> None:
+        """Writes every press's full frame (verbatim) plus the run's metadata to
+        a single combined JSON file."""
+        if not self._press_log:
+            return
+        name, ok = QInputDialog.getText(self, "Experiment name", "Experiment name (optional):")
+        if not ok:
+            return
+        name = name.strip()
+        suffix = f"_{name}" if name else ""
+        default_name = f"beh_presses{suffix}_{datetime.now():%Y%m%d_%H%M%S}.json"
+        path, _ = QFileDialog.getSaveFileName(self, "Save press data", default_name, "JSON files (*.json)")
+        if not path:
+            return
+        rows = [[frame[field] for field in FRAME_FIELDS] for frame in self._press_log]
+        metadata = build_metadata("behavioral", self._settings, name)
+        save_run(Path(path), metadata, FRAME_FIELDS, rows)
+
     def _on_line(self, line: str) -> None:
         if line.startswith("ERR "):
             self._status_label.setText(line)
@@ -268,10 +295,21 @@ class BehavioralSessionPage(QWidget):
                 a_val, b_val = self._last_live_a, self._last_live_b
         else:
             self._last_live_a, self._last_live_b = a_val, b_val
+            self._last_live_frame = dict(frame)
 
         self._current_marker.setData([a_val], [b_val])
 
         if frame["Press"] == 1:
+            # The firmware zeroes all LEDs at press time (allLedsOff), so the
+            # Press=1 frame's LED columns arrive as 0. Save the last live
+            # (pre-press) frame instead — it still holds the real intensities
+            # (background + LEDA/LEDB) at the moment of press — marked Press=1.
+            if frame[a_key] == 0 and frame[b_key] == 0 and self._last_live_frame is not None:
+                saved = dict(self._last_live_frame)
+                saved["Press"] = 1
+            else:
+                saved = dict(frame)
+            self._press_log.append(saved)
             self._press_count += 1
             self._press_a.append(a_val)
             self._press_b.append(b_val)

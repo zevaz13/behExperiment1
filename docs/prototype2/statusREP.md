@@ -1,6 +1,6 @@
 # Status: Rapid Experimental Prototyping Tool (REP)
 
-Last updated: 2026-07-01
+Last updated: 2026-07-14
 
 ## What this is
 
@@ -180,9 +180,10 @@ Same two-phase flicker structure as Grid (stim = LEDA + LEDB + bgStim1 + bgStim2
 | `param_form.py` | Shared config form widget (Linear/Grid/Behavioral) + `PhaseDiagram`/`SavingSection` | Done (M10, extended M11.1/M12, redesigned M14) |
 | `config_io.py` | JSON save/load for experiment configs | Done (M10) |
 | `figure_export.py` | `save_plot_widgets()` — exports a session page's pyqtgraph plots to PNG | Done (M13.2) |
-| `linear_view.py` | Sub-mode B (Linear) config + session views | Done (M10, extended M11.1/M13/M14) |
-| `grid_view.py` | Sub-mode C (Grid) config + session views | Done (M11, extended M11.1/M13/M14) |
-| `behavioral_view.py` | Sub-mode D (Behavioral) config + session views | Done (M12, extended M13.2/M14) |
+| `run_export.py` | `build_metadata()`, `save_run()` (combined metadata+data JSON), `save_metadata()` (sidecar) | Done (M15) |
+| `linear_view.py` | Sub-mode B (Linear) config + session views | Done (M10, extended M11.1/M13/M14/M15) |
+| `grid_view.py` | Sub-mode C (Grid) config + session views | Done (M11, extended M11.1/M13/M14/M15) |
+| `behavioral_view.py` | Sub-mode D (Behavioral) config + session views | Done (M12, extended M13.2/M14/M15) |
 | `test_offscreen.py` | Offscreen test suite (protocol, navigation, all views), `QT_QPA_PLATFORM=offscreen` | Done (M7-M13), extended each milestone (M14 layout/visual work verified via one-off scripts instead, see M14 notes) |
 
 ## What M8/M9 implement
@@ -293,7 +294,59 @@ original design rationale (brainstormed with the user before implementation).
 
 ---
 
-## GUI stack (M7–M14)
+## What M15 implements
+
+Per-mode refinements (see `PLAN.md` M15 for the milestone checklist). All
+GUI-only; firmware/protocol unchanged. A–C hardware-tested; D hardware-tested.
+
+- **A. Default-value tweaks**: Solid-hue "Hue scale max" default 1000 -> 5000
+  (`solid_view._DEFAULT_HUE_SCALE`); Grid-hue "Heatmap color max" default
+  10000 -> 3500 (`grid_view._HEATMAP_CLIM`) since 10000 washed the colors out.
+- **B. Saving-section gating**: the Linear/Grid config "Saving" section is now
+  disabled until the hue sensor is enabled (`SavingSection.set_hue_enabled()`
+  disables the whole section widget, not just the "Save hue data" checkbox).
+- **C. Baseline points on the mean-per-step plot** (Linear + Grid hue view):
+  the "Hue - mean per step" plot now includes baseline trials, each on its own
+  labeled x-slot outside the 1..N step range — start baselines `B1,B2,...` at
+  `x = -n_start..-1` (left of step 1), end baselines continuing the numbering
+  (`B3,B4,...`) at `x = N+1..N+n_end` (right of step N); custom bottom-axis
+  tick labels (`_apply_mean_axis`), trial->x mapping (`_mean_x_for`). Grid uses
+  `N = steps*steps`; its per-cell heatmap fill stays stimulus-only. The mean
+  point is also now drawn **live** and updated in place as each trial's frames
+  arrive (`_update_mean_point`), so the last trial (including an end baseline)
+  is plotted without waiting for a next trial or Stop — the old flush-on-trial-
+  change never plotted the final trial until Stop.
+- **D. Metadata saving + linking**: new shared `run_export.py` —
+  `build_metadata(mode, settings, name)` (flat: every config param plus
+  provenance `mode`/`experiment_name`/`saved_at`, written last so provenance
+  wins over a GET response's own `mode`), `save_run(path, metadata, columns,
+  rows)` (single combined JSON `{metadata, columns, data}`), and
+  `save_metadata(path, metadata)` (sidecar). Per-mode split, by user
+  preference:
+  - **Solid + Behavioral** (small runs): one self-contained combined JSON via
+    `save_run` — read back with `d = json.load(f); meta = d["metadata"];
+    df = pandas.DataFrame(d["data"], columns=d["columns"])`.
+  - **Linear + Grid** (long frame streams): the streaming `.txt` data log is
+    kept unchanged (crash-safe), plus a sidecar `.json` (same filename stem)
+    holding the metadata via `save_metadata`, written when the log opens.
+  - **Behavioral press-data save**: a "Save press data..." button on the
+    session page writes the combined JSON. The on-screen table stays minimal
+    (trial count, LEDA value, LEDB value), but each saved row is the full
+    frame (all 5 LED intensities incl. background, hue channels, LEDA/LEDB
+    assignment). Because the firmware zeroes all LEDs at press time
+    (`allLedsOff()`, the M12.2 timing), the literal `Press=1` frame arrives
+    all-zero; the GUI caches the whole last-live (pre-press) frame
+    (`_last_live_frame`) and saves that (marked `Press=1`) whenever the press
+    frame's LED columns are zeroed, preserving the real intensities. A press
+    frame carrying real values is saved as-is.
+  - `SavingSection.experiment_name()` added; Linear/Grid config pages expose it
+    and `main_window` passes it into `start_session`.
+
+New GUI file: `run_export.py`.
+
+---
+
+## GUI stack (M7–M15)
 
 - **Output**: `prototype2/GUI/configurableFirmware/`
 - **Stack**: PySide6 + pyqtgraph + pyserial, managed by `uv`

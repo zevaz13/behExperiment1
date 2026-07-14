@@ -400,12 +400,39 @@ land quickly and the open design question can be handled separately.
       heatmap cell fills live too (stimulus-only). `_stop()` no longer flushes.
 
 #### D. Metadata saving + linking (open design — brainstorm first)
-- [ ] Find a way to save experiment metadata (the same info as the save-config
+- [x] Find a way to save experiment metadata (the same info as the save-config
       JSON: frequency, trial length, LED assignments, etc.) and link it to the
       resulting saved experiment data so a saved dataset can be traced back to
-      the config that produced it. Approach undecided — spans Linear/Grid/
-      Behavioral.
-- [ ] Behavioral: add an option to save the press table when it is non-empty.
+      the config that produced it. Spans Linear/Grid/Behavioral.
+      **Decided (per-mode split, per user preference):**
+      - New shared `run_export.py`: `build_metadata(mode, settings, name)`
+        (flat: all config params + provenance `mode`/`experiment_name`/
+        `saved_at`, provenance written last so it wins over a GET response's own
+        `mode`), `save_run(path, metadata, columns, rows)` (single combined JSON:
+        `{metadata, columns, data}`), `save_metadata(path, metadata)` (sidecar).
+      - **Solid + Behavioral** (small runs): one self-contained combined JSON
+        via `save_run` — `pd.DataFrame(d["data"], columns=d["columns"])` +
+        `d["metadata"]` in one `json.load`.
+      - **Linear + Grid** (long frame streams): keep the streaming `.txt` data
+        log unchanged (crash-safe, familiar) and write a sidecar `.json`
+        (same filename stem) with the metadata via `save_metadata`. Revisit
+        whether to fold into one combined JSON later, once the JSON is proven
+        out on the small modes.
+      - `SavingSection.experiment_name()` added; Linear/Grid config pages expose
+        it; `main_window` passes it into `start_session`.
+- [x] Behavioral: add an option to save the press table when it is non-empty.
       The saved table should include the whole frame received by the GUI (with
-      LED configuration), and reuse whatever metadata-saving approach is
-      decided above.
+      LED configuration), and reuse the metadata-saving approach above.
+      **Done (hardware-tested):** "Save press data..." button on the session
+      page → combined JSON via `save_run` (metadata + full press frames).
+      The in-window table stays minimal (trial count, LEDA value, LEDB value),
+      but each saved row is the full frame — all 5 LED intensities (incl.
+      background), hue channels, and the LEDA/LEDB assignment.
+      Because the firmware zeroes all LEDs at press time (`allLedsOff()`, the
+      M12.2 timing), the literal Press=1 frame arrives all-zero; so the GUI now
+      caches the whole last-live (pre-press) frame (`_last_live_frame`) and
+      saves that (marked Press=1) whenever the press frame's LED columns are
+      zeroed — preserving the real intensities (e.g. Cyan=2300, Red=578,
+      Green=976). A press frame carrying real values is still saved as-is.
+
+**Status: M15-D complete, hardware-tested by the user — confirmed working.**

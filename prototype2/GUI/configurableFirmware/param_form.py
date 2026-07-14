@@ -497,3 +497,6 @@ class SavingSection(QWidget):
         if not self._save_checkbox.isChecked():
             return None
         return self._explicit_path or Path(self._default_name())
+
+    def experiment_name(self) -> str:
+        return self._name_edit.text().strip()
