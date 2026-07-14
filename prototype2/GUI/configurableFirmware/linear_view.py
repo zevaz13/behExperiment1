@@ -156,6 +156,7 @@ class LinearSessionPage(QWidget):
         self._seen_trials: set[int] = set()
         self._last_trial: int | None = None
         self._trial_hue_samples: list[tuple[int, int, int]] = []
+        self._mean_point_open = False
 
         self._cum_x: list[int] = []
         self._cum: dict[str, list[int]] = {"Red": [], "Green": [], "Blue": []}
@@ -228,6 +229,7 @@ class LinearSessionPage(QWidget):
         self._seen_trials = set()
         self._last_trial = None
         self._trial_hue_samples = []
+        self._mean_point_open = False
         self._cum_x = []
         self._cum = {"Red": [], "Green": [], "Blue": []}
         self._mean_x = []
@@ -270,7 +272,6 @@ class LinearSessionPage(QWidget):
     def _stop(self) -> None:
         if self._link is not None:
             self._link.send("STOP")
-        self._flush_trial_mean()
         self._status_label.setText("Stopped")
 
     def _on_save_figure(self) -> None:
@@ -301,17 +302,25 @@ class LinearSessionPage(QWidget):
         ticks += [(n + 1 + e, f"B{self._n_start + e + 1}") for e in range(self._n_end)]
         self._mean_plot.getAxis("bottom").setTicks([ticks])
 
-    def _flush_trial_mean(self) -> None:
-        if not self._trial_hue_samples or self._last_trial is None:
-            self._trial_hue_samples = []
-            return
+    def _update_mean_point(self) -> None:
+        """Draw/refresh the current trial's mean point live, so the last trial
+        (including an end baseline) is plotted without waiting for a next trial
+        or a Stop. Opens the point on the trial's first hue sample and updates
+        it in place as more samples arrive."""
         n = len(self._trial_hue_samples)
+        if n == 0 or self._last_trial is None:
+            return
         rs, gs, bs = (sum(v) / n for v in zip(*self._trial_hue_samples))
-        self._mean_x.append(self._mean_x_for(self._last_trial))
-        for name, val in (("Red", rs), ("Green", gs), ("Blue", bs)):
-            self._mean[name].append(val)
+        if not self._mean_point_open:
+            self._mean_x.append(self._mean_x_for(self._last_trial))
+            for name, val in (("Red", rs), ("Green", gs), ("Blue", bs)):
+                self._mean[name].append(val)
+            self._mean_point_open = True
+        else:
+            for name, val in (("Red", rs), ("Green", gs), ("Blue", bs)):
+                self._mean[name][-1] = val
+        for name in ("Red", "Green", "Blue"):
             self._mean_curves[name].setData(self._mean_x, self._mean[name])
-        self._trial_hue_samples = []
 
     def _on_line(self, line: str) -> None:
         if line.startswith("ERR "):
@@ -323,8 +332,9 @@ class LinearSessionPage(QWidget):
 
         trial = frame["TrialNumber"]
         if trial != self._last_trial:
-            self._flush_trial_mean()
             self._last_trial = trial
+            self._trial_hue_samples = []
+            self._mean_point_open = False
         self._seen_trials.add(trial)
         completed = min(len(self._seen_trials), self._total_trials)
         self._progress.setValue(completed)
@@ -340,6 +350,7 @@ class LinearSessionPage(QWidget):
                 self._cum[name].append(frame[f"HUE_{name[0]}"])
                 self._cum_curves[name].setData(self._cum_x, self._cum[name])
             self._trial_hue_samples.append((frame["HUE_R"], frame["HUE_G"], frame["HUE_B"]))
+            self._update_mean_point()
 
         if self._log_file is not None:
             self._log_file.write(" ".join(str(frame[f]) for f in FRAME_FIELDS) + "\n")

@@ -391,7 +391,13 @@ land quickly and the open design question can be handled separately.
 - [x] Grid session (hue): same fix as Linear (N = steps*steps). Heatmap cell
       fill stays stimulus-only (baselines map to no grid cell).
 
-- [ ] The last baseline is not completely logged in the plots (linear and grid), until the user presses stop. It should be done automatically.
+- [x] The last baseline is not completely logged in the plots (linear and grid), until the user presses stop. It should be done automatically.
+      Cause: the mean point was only computed on a *trial change*, so the final
+      trial (now an end baseline) had no next trial to trigger it. Fix: the mean
+      point is now drawn live and updated in place as each trial's frames arrive
+      (`_update_mean_point`), so the current/last trial's point always appears
+      without waiting for a next trial or Stop. Final value is unchanged; grid's
+      heatmap cell fills live too (stimulus-only). `_stop()` no longer flushes.
 
 #### D. Metadata saving + linking (open design — brainstorm first)
 - [ ] Find a way to save experiment metadata (the same info as the save-config

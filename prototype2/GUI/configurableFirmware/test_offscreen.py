@@ -487,11 +487,15 @@ def test_linear_hue_plots_and_mean_per_step():
     fake.inject(_frame(trial=1, hue_r=100, hue_g=200, hue_b=300))
     fake.inject(_frame(trial=1, hue_r=200, hue_g=300, hue_b=400))
     assert session._cum["Red"] == [100, 200], "Cumulative plot should append every frame's reading"
-
-    fake.inject(_frame(trial=2, hue_r=10, hue_g=10, hue_b=10))  # trial change flushes trial 1's mean
+    # The mean point is drawn live and updated in place as samples arrive — no
+    # next trial or Stop is needed for the current trial's point to appear.
     assert session._mean_x == [1]
-    assert session._mean["Red"] == [150.0], f"Expected mean of [100,200]=150, got {session._mean['Red']}"
-    print("  [OK] Linear hue plots: cumulative appends every frame, mean-per-step flushes on trial change")
+    assert session._mean["Red"] == [150.0], f"Expected running mean 150, got {session._mean['Red']}"
+
+    fake.inject(_frame(trial=2, hue_r=10, hue_g=10, hue_b=10))  # a new trial opens its own point
+    assert session._mean_x == [1, 2]
+    assert session._mean["Red"] == [150.0, 10.0], session._mean["Red"]
+    print("  [OK] Linear hue mean-per-step: point drawn live per trial, no Stop needed")
 
 
 def test_linear_hue_log_file_written():
