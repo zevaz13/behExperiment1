@@ -30,6 +30,9 @@ int   ref1Int = 0, ref2Int = 0, ref3Int = 0;
 LedId baselineLed1 = LED_NONE, baselineLed2 = LED_NONE, baselineLed3 = LED_NONE;
 int   baselineLed1Val = 0, baselineLed2Val = 0, baselineLed3Val = 0;
 
+bool knobShuffleEnabled = false;
+volatile bool knobsSwapped = false;
+
 bool hueEnabled = false;
 volatile int hueR = -99, hueG = -99, hueB = -99, hueCT = -99, hueL = -99;
 
@@ -64,6 +67,8 @@ void applyDefaults() {
     baselineLed3 = LED_NONE; baselineLed3Val = 0;
     hueEnabled = false;
     guiPressRequest = false;
+    knobShuffleEnabled = false;
+    knobsSwapped = false;
     updateHalfPeriod();
 }
 

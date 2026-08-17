@@ -128,6 +128,7 @@ PARAM_SPEC: dict[str, ParamMeta] = {
     "baselineLed3":    ParamMeta("led", None, "Baseline LED 3", stage="Baseline", exclusion_group="baseline"),
     "baselineLed3Val": ParamMeta("int", (0, 4095), "Baseline 3 intensity", stage="Baseline"),
     "hue":             ParamMeta("bool", None, "Enable hue sensor", stage="Hue"),
+    "knobShuffle":     ParamMeta("bool", None, "Randomize knob-LED mapping", stage="Stimulus"),
 }
 
 # Fixed display order for every possible column, spanning all three modes.
@@ -153,7 +154,7 @@ _ROW_ORDER: list = [
     ("led_pair", "baselineLed1"), "baselineLed1", "baselineLed1Val",
     ("led_pair", "baselineLed2"), "baselineLed2", "baselineLed2Val",
     ("led_pair", "baselineLed3"), "baselineLed3", "baselineLed3Val",
-    "hue",
+    "hue", "knobShuffle",
 ]
 
 

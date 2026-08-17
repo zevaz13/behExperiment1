@@ -17,12 +17,8 @@ We created a new version of the GUI and Firmware to control the new firmware for
 - The new GUIs must run on native Windows, not WSL — the Teensy enumerates as a COM port that WSL2 can't see without extra passthrough setup. If developing/testing from WSL or Linux, set `UV_PROJECT_ENVIRONMENT=.venv-linux` there so the venv doesn't collide with the Windows one (see README.md).
 - ALWAYS keep a document called PLAN.md where we can communicate about the current plan of action. Write the current milestones to it, and checklists toward that.
 
-## Done
-- Firmware and GUI that controls the stimulator for subject experiments, behavioral and grid with support for red-green, and blue-green experiments. prototype2/Firmware/subjectExperiment/ and prototype2/GUIsubjectExp/
-- Configurable Firmware and GUI (Rapid Experiment Prototyping Tool): runtime-configurable Solid/Linear/Grid/Behavioral sub-modes, any of the 5 LEDs assignable to any role, optional hue sensor, JSON config save/load. prototype2/Firmware/configurableFirmware/ and prototype2/GUI/configurableFirmware/. All milestones (M1-M12) done and hardware-tested; see PLAN.md and docs/prototype2/statusREP.md.
-
 ## Project Goals
-Deliverables of this project are new firmware to be added to prototype2/Firmware/ (new folder) and new GUI added to prototype2/ That support the requirements outlined in docs/prototype2/requirementsREP.md
+Add new features to the Firmware to be added to prototype2/Firmware/ (new folder) and GUI  prototype2/GUI That support the requirements outlined in docs/prototype2/requirementsREP.md
 
 ## Coding standards
 1. Use latest versions of libraries and idiomatic approaches as of today

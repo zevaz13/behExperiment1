@@ -19,8 +19,8 @@ Key documents:
 - **State machine**: `IDLE → CONFIGURED → RUNNING → IDLE`. `MODE X` enters CONFIGURED. `START` enters RUNNING. `STOP` always returns to IDLE and clears the active mode.
 - **Serial protocol**: `MODE X`, `SET param value`, `GET [param]`, `START`, `STOP`. Multi-set via comma-separated pairs: `SET REDLED 300, GREENLED 200`.
 - **Data frame** (every 100ms via hardware timer, only when RUNNING):
-  `FRAME@TrialNumber@Red@Yellow@Green@Blue@Cyan@HUE_R@HUE_G@HUE_B@HUE_CT@HUE_L@LEDA@LEDB@Press@Trigger`
-  Unused numeric fields sent as `-99`. `FRAME` is the line identifier (replaced the draft `TriggerCue` field). `LEDA`/`LEDB` are the *name* of the assigned LED (e.g. `RED`, or `NONE` if unset) — intensity is already in the matching Red/Yellow/Green/Blue/Cyan column.
+  `FRAME@TrialNumber@Red@Yellow@Green@Blue@Cyan@HUE_R@HUE_G@HUE_B@HUE_CT@HUE_L@LEDA@LEDB@Press@Trigger@Knob1@Knob2`
+  Unused numeric fields sent as `-99`. `FRAME` is the line identifier (replaced the draft `TriggerCue` field). `LEDA`/`LEDB` are the *name* of the assigned LED (e.g. `RED`, or `NONE` if unset) — intensity is already in the matching Red/Yellow/Green/Blue/Cyan column. `Knob1`/`Knob2` (M16) report which role (`LEDA`/`LEDB`) each physical knob currently drives in Behavioral mode, or `NONE`/`NONE` in every other mode.
 - **LED naming**: `YELLOW` throughout (same as AMBER, same pin 0). No `AMBER` in new code.
 - **LED assignment**: `LedId` enum (`LED_RED=0, LED_YELLOW, LED_GREEN, LED_BLUE, LED_CYAN, LED_NONE`). All LED state in `ledVal[5]` array indexed by `LedId`.
 - **Hue sensor**: Optional TCS34725 via I2C (`Adafruit_TCS34725` library). `initHueSensor()` called on START if `hue=1`; returns error if not found. `readHue()` called from `loop()` when `hueEnabled`.
@@ -30,6 +30,7 @@ Key documents:
 - **Baseline logic is shared**: `baselineRunner.h/cpp` holds `runBaselines()`, used identically by `linearMode.cpp` and `gridMode.cpp`. Behavioral mode (M6) has no baselines per requirements, so it doesn't call it.
 - **Behavioral PRESS**: physical button (`Bounce` on `PIN_BUTTON`) and the serial `PRESS` command have identical effect in Behavioral mode. Since `handleSerial()` (main thread) and `runBehavioral()` (experiment thread, via TeensyThreads) run on different threads, `PRESS` can't call the trial-advance logic directly — it sets `guiPressRequest`, which `runBehavioral()`'s polling loop consumes exactly like a button edge.
 - **No hue in Behavioral**: `SET hue 1` is rejected (`applyParam()` returns false) while `MODE_BEHAVIORAL` is active — an explicit requirement, unlike other mode-irrelevant params which are silently accepted and unused.
+- **Knob-LED shuffle (M16)**: `knobShuffleEnabled` (settable via `SET knobShuffle 0/1`, any mode, no mode-guard — only `behavioralMode.cpp` reads it, and `applyDefaults()` resets it on every `MODE` switch) gates a per-trial coin flip in `runBehavioral()`: after a press ends a trial, if enabled, a uniform draw `>= 0.5` flips `knobsSwapped`, which swaps which physical knob (`PIN_KNOB_A`/`PIN_KNOB_B`) feeds role A vs role B for the *next* trial. Default off keeps the fixed knob1->LEDA/knob2->LEDB mapping. The frame's `Knob1`/`Knob2` fields report the role each physical knob drove *during* the trial that just ended, since the swap decision happens after that trial's press is logged.
 
 ---
 
@@ -41,17 +42,17 @@ Key documents:
 |------|---------|--------|
 | `configurableFirmware.ino` | Entry point, setup(), loop(), experiment thread | Done (M1–M3) |
 | `pinDefs.h` | Pin constants for all 5 LEDs, trigger, button, knobs | Done (M1) |
-| `globals.h/cpp` | State machine, all params, ledVal[], timers, helpers | Done (M1) |
+| `globals.h/cpp` | State machine, all params, ledVal[], timers, helpers | Done (M1, extended M16) |
 | `ledControl.h/cpp` | ledPinConfig(), setLed(), allLedsOff() | Done (M1) |
-| `serialParser.h/cpp` | MODE/SET/GET/START/STOP/PRESS command handling | Done (M1–M3) |
-| `dataFrame.h/cpp` | serialFrameOutput() ISR, 100ms stream | Done (M1) |
+| `serialParser.h/cpp` | MODE/SET/GET/START/STOP/PRESS command handling | Done (M1–M3, extended M16) |
+| `dataFrame.h/cpp` | serialFrameOutput() ISR, 100ms stream | Done (M1, extended M16) |
 | `timerManager.h/cpp` | startFlicker(), stopFlicker(), startStream() | Done (M1) |
 | `hueSensor.h/cpp` | TCS34725 init and readHue() | Done (M3) |
 | `solidMode.h/cpp` | LED hold + button press loop | Done (M2) |
 | `linearMode.h/cpp` | Linear flickering experiment | Done (M4) |
 | `gridMode.h/cpp` | Grid flickering experiment | Done (M5) |
 | `baselineRunner.h/cpp` | Shared solid baseline display (Linear + Grid) | Done (M5) |
-| `behavioralMode.h/cpp` | ADC knob behavioral experiment | Done (M6) |
+| `behavioralMode.h/cpp` | ADC knob behavioral experiment | Done (M6, extended M16) |
 
 ---
 
@@ -73,6 +74,8 @@ Key documents:
 | `ref1/2/3Led, Int` | LedId/int | Reference phase LEDs (flicker cycle only) |
 | `baselineLed1/2/3, Val` | LedId/int | Solid LEDs shown during baseline trials (independent of ref1/2/3) |
 | `hueEnabled` | bool | Enables hue sensor reading |
+| `knobShuffleEnabled` | bool | Behavioral only: randomize knob->LED mapping per trial |
+| `knobsSwapped` | volatile bool | Behavioral only: current knob->LED mapping state |
 | `ledVal[5]` | volatile int[] | Current output per LED (indexed by LedId) |
 | `trCnt` | volatile int | Trial counter (1+ stim, 1001+ baseline) |
 | `trigFlag` | volatile int | Hardware trigger pin state |
@@ -106,6 +109,7 @@ Key documents:
 | `SET baselineLed1/2/3 X` | `SET baselineLed1 YELLOW` | same; used for baseline trials only |
 | `SET baselineLed1/2/3Val N` | `SET baselineLed1Val 2000` | [0, 4095] |
 | `SET hue 0/1` | `SET hue 1` | enables hue sensor |
+| `SET knobShuffle 0/1` | `SET knobShuffle 1` | Behavioral only: randomize knob->LED mapping per trial |
 | `SET REDLED N` | `SET REDLED 2000` | Solid mode only, live while running |
 | `SET YELLOWLED N` | — | same |
 | `SET GREENLED N` | — | same |
@@ -133,6 +137,7 @@ Special commands: `PRESS` (Solid or Behavioral + RUNNING only — simulates butt
 | M10 | GUI Sub-mode B view + config I/O | **Done, needs hardware run (Windows)** |
 | M11 | GUI Sub-mode C view (Grid) | **Done, needs hardware run (Windows)** |
 | M12 | GUI Sub-mode D view (Behavioral) | **Done, needs hardware run (Windows)** |
+| M16 | Randomized knob-LED mapping in Behavioral mode | **Done, needs hardware run** |
 
 ---
 
@@ -163,6 +168,8 @@ Same two-phase flicker structure as Grid (stim = LEDA + LEDB + bgStim1 + bgStim2
 
 **M12.1 fix**: the press handler used to call `allLedsOff()` immediately after capturing the pressed values, zeroing `ledVal[]` before the *asynchronous* 100ms `FRAME` timer could report them — so `Press=1` frames essentially always showed 0/0 instead of the actual pressed intensities. Fixed by calling `serialFrameOutput()` synchronously right after `pressFlag = true` and before `allLedsOff()`, forcing out the press-event frame deterministically instead of relying on the periodic timer's timing.
 
+**M16 addition**: optional `knobShuffleEnabled` randomizes which physical knob drives LEDA vs LEDB per trial (see "Knob-LED shuffle (M16)" above). The frame gained `Knob1`/`Knob2` fields reporting the live mapping.
+
 ---
 
 ## GUI file map
@@ -174,17 +181,17 @@ Same two-phase flicker structure as Grid (stim = LEDA + LEDB + bgStim1 + bgStim2
 | `pyproject.toml` | uv project, deps: pyside6, pyqtgraph, pyserial | Done (M7) |
 | `main.py` | Entry point | Done (M7) |
 | `serial_link.py` | `SerialLink` (QThread), Teensy port auto-detect — unchanged from `GUIsubjectExp`, transport is protocol-agnostic | Done (M7) |
-| `protocol.py` | `parse_frame`, `parse_get_response`, `build_mode_command`, `build_set_command` for the `MODE`/`SET`/`GET`/`START`/`STOP` protocol | Done (M7) |
+| `protocol.py` | `parse_frame`, `parse_get_response`, `build_mode_command`, `build_set_command` for the `MODE`/`SET`/`GET`/`START`/`STOP` protocol | Done (M7, extended M16) |
 | `main_window.py` | `ConnectPage`, `ModeSelectPage`, `MainWindow` navigation | Done (M8, extended M10-M12) |
 | `solid_view.py` | Sub-mode A (Solid) view | Done (M9) |
-| `param_form.py` | Shared config form widget (Linear/Grid/Behavioral) + `PhaseDiagram`/`SavingSection` | Done (M10, extended M11.1/M12, redesigned M14) |
+| `param_form.py` | Shared config form widget (Linear/Grid/Behavioral) + `PhaseDiagram`/`SavingSection` | Done (M10, extended M11.1/M12, redesigned M14, extended M16) |
 | `config_io.py` | JSON save/load for experiment configs | Done (M10) |
 | `figure_export.py` | `save_plot_widgets()` — exports a session page's pyqtgraph plots to PNG | Done (M13.2) |
 | `run_export.py` | `build_metadata()`, `save_run()` (combined metadata+data JSON), `save_metadata()` (sidecar) | Done (M15) |
 | `linear_view.py` | Sub-mode B (Linear) config + session views | Done (M10, extended M11.1/M13/M14/M15) |
 | `grid_view.py` | Sub-mode C (Grid) config + session views | Done (M11, extended M11.1/M13/M14/M15) |
-| `behavioral_view.py` | Sub-mode D (Behavioral) config + session views | Done (M12, extended M13.2/M14/M15) |
-| `test_offscreen.py` | Offscreen test suite (protocol, navigation, all views), `QT_QPA_PLATFORM=offscreen` | Done (M7-M13), extended each milestone (M14 layout/visual work verified via one-off scripts instead, see M14 notes) |
+| `behavioral_view.py` | Sub-mode D (Behavioral) config + session views | Done (M12, extended M13.2/M14/M15/M16) |
+| `test_offscreen.py` | Offscreen test suite (protocol, navigation, all views), `QT_QPA_PLATFORM=offscreen` | Done (M7-M13), extended each milestone (M14 layout/visual work verified via one-off scripts instead, see M14 notes; extended M16) |
 
 ## What M8/M9 implement
 
@@ -206,7 +213,7 @@ Same two-phase flicker structure as Grid (stim = LEDA + LEDB + bgStim1 + bgStim2
 ## What M12 implements
 
 - **BehavioralConfigPage**: `ParamForm` with Behavioral's fields (`freq`, `interTrialWait`, `LEDA`/`maxA`/`minA`, `LEDB`/`maxB`/`minB`, `bgStim1/2`, `ref1/2/3` — no `hue`, no `steps`/`order`/baselines/`trialLength`, matching what the firmware actually reads in this mode). Load/Save JSON buttons added in M12.1 (`beh_configparams_<timestamp>.json`), mirroring Linear/Grid.
-- **BehavioralSessionPage**: mirrors `GUIsubjectExp`'s `BehavioralSessionPage` — a live LEDA/LEDB position marker updated from every frame (via `LED_FRAME_KEY`), press marks (`Press=1` frames) accumulating a scatter + a rolling-median star marker and label, and a press table with dynamic `[LEDA name, LEDB name]` column headers. No progress bar (the firmware has no fixed trial count in this mode, runs until `STOP`). No data saving yet (explicitly deferred by requirements — "we will save data with the stimulator status at button presses" later).
+- **BehavioralSessionPage**: mirrors `GUIsubjectExp`'s `BehavioralSessionPage` — a live LEDA/LEDB position marker updated from every frame (via `LED_FRAME_KEY`), press marks (`Press=1` frames) accumulating a scatter + a rolling-median star marker and label, and a press table with dynamic `[LEDA name, LEDB name, Knob1, Knob2]` column headers (M16 added the last two, reporting the knob->LED mapping live per press). No progress bar (the firmware has no fixed trial count in this mode, runs until `STOP`). No data saving yet (explicitly deferred by requirements — "we will save data with the stimulator status at button presses" later).
 - **Press button**: sends `PRESS` directly from the session page (same "page owns its own in-place commands" pattern as `LinearSessionPage`/`GridSessionPage`'s Stop button) — identical effect to the physical button, per the M6 firmware decision that made `PRESS` valid in Behavioral mode.
 - **M12.2 fix — press table/median still showed 0,0 on hardware even after the M12.1 firmware fix**: the live marker updates from every frame, so it looked correct (it was just reflecting the next trial's knob position by the time you noticed), while the `Press=1` frame's own LED columns were still arriving zeroed on real hardware. Fixed on the GUI side, independent of the exact firmware timing: `BehavioralSessionPage` caches the last *live* (non-press) LEDA/LEDB reading (`_last_live_a`/`_last_live_b`) and falls back to it for the marker/table/median only when the press frame's own values are both exactly 0 (the signature of `allLedsOff()` having already zeroed both LEDs) — a press frame with real, possibly fresher, values is still trusted directly.
 - **`PlaceholderPage` removed**: with all 4 modes now having real views, the placeholder was dead code.
@@ -346,10 +353,32 @@ New GUI file: `run_export.py`.
 
 ---
 
+## What M16 implements
+
+GUI side of the firmware's randomized knob-LED mapping (see "Knob-LED
+shuffle (M16)" above for the firmware half). Behavioral-only.
+
+- **`protocol.py`**: `FRAME_FIELDS` gained `Knob1`/`Knob2` (kept as LED-role
+  strings, not int-coerced, alongside `LEDA`/`LEDB`), matching the firmware's
+  new 17-field frame.
+- **`param_form.py`**: `knobShuffle` added to `PARAM_SPEC` (bool, Stimulus
+  stage) and `_ROW_ORDER` — renders as a checkbox reusing Behavioral's
+  existing Stimulus group box.
+- **`behavioral_view.py`**: `knobShuffle` added to `BEHAVIORAL_PARAM_KEYS`,
+  so it appears on `BehavioralConfigPage`'s form and round-trips through
+  Load/Save JSON and `changed_values()`/`full_settings()` like every other
+  Behavioral param, with no page-specific code needed. `BehavioralSessionPage`'s
+  table widened from 3 to 5 columns (`Press #`, LEDA name, LEDB name, `Knob1`,
+  `Knob2`), populated straight from the frame's own `Knob1`/`Knob2` fields —
+  no last-live-frame fallback needed since `allLedsOff()`'s press-time
+  zeroing only touches LED intensities, not the knob-role fields.
+
+---
+
 ## GUI stack (M7–M15)
 
 - **Output**: `prototype2/GUI/configurableFirmware/`
 - **Stack**: PySide6 + pyqtgraph + pyserial, managed by `uv`
 - **Must run on Windows** (COM port). When developing from WSL: `UV_PROJECT_ENVIRONMENT=.venv-linux`
 - Follows `prototype2/GUIsubjectExp/` structure: `serial_link.py`, `protocol.py`, per-mode view files
-- Frame parser: looks for lines starting with `FRAME@`, splits the remainder on `@` into 15 fields (`protocol.FRAME_FIELDS`)
+- Frame parser: looks for lines starting with `FRAME@`, splits the remainder on `@` into 17 fields (`protocol.FRAME_FIELDS`)

@@ -41,6 +41,10 @@ extern int   ref1Int, ref2Int, ref3Int;
 extern LedId baselineLed1, baselineLed2, baselineLed3;  // baseline solid-display LEDs
 extern int   baselineLed1Val, baselineLed2Val, baselineLed3Val;
 
+// ── Behavioral knob-LED shuffle ──────────────────────────────────────────────
+extern bool knobShuffleEnabled;      // user-facing flag: randomize knob->LED mapping per trial
+extern volatile bool knobsSwapped;   // current mapping; written by runBehavioral(), read by serialFrameOutput()
+
 // ── Hue sensor ────────────────────────────────────────────────────────────
 extern bool hueEnabled;
 extern volatile int hueR, hueG, hueB, hueCT, hueL;

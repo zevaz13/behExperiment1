@@ -19,7 +19,15 @@ void serialFrameOutput() {
     Serial.print(ledIdStr(ledA));   Serial.print("@");
     Serial.print(ledIdStr(ledB));   Serial.print("@");
     Serial.print(pressFlag ? 1 : 0); Serial.print("@");
-    Serial.println(trigFlag);
+    Serial.print(trigFlag); Serial.print("@");
+
+    if (activeMode == MODE_BEHAVIORAL) {
+        Serial.print(knobsSwapped ? "LEDB" : "LEDA"); Serial.print("@");
+        Serial.print(knobsSwapped ? "LEDA" : "LEDB");
+    } else {
+        Serial.print("NONE@NONE");
+    }
+    Serial.println();
 
     pressFlag = false;
 }

@@ -43,6 +43,7 @@ BEHAVIORAL_PARAM_KEYS = [
     "LEDA", "maxA", "minA", "LEDB", "maxB", "minB",
     "bgStim1Led", "bgStim1Int", "bgStim2Led", "bgStim2Int",
     "ref1Led", "ref1Int", "ref2Led", "ref2Int", "ref3Led", "ref3Int",
+    "knobShuffle",
 ]
 
 
@@ -171,8 +172,8 @@ class BehavioralSessionPage(QWidget):
             [], [], pen=None, symbol="star", symbolBrush="#f70404", symbolPen=None, symbolSize=22
         )
 
-        self._table = QTableWidget(0, 3)
-        self._table.setHorizontalHeaderLabels(["Press #", "A", "B"])
+        self._table = QTableWidget(0, 5)
+        self._table.setHorizontalHeaderLabels(["Press #", "A", "B", "Knob1", "Knob2"])
         self._table.verticalHeader().setVisible(False)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self._median_label = QLabel("Median: —")
@@ -209,7 +210,7 @@ class BehavioralSessionPage(QWidget):
         self._press_marks.setData([], [])
         self._median_marker.setData([], [])
         self._table.setRowCount(0)
-        self._table.setHorizontalHeaderLabels(["Press #", self._led_a, self._led_b])
+        self._table.setHorizontalHeaderLabels(["Press #", self._led_a, self._led_b, "Knob1", "Knob2"])
         self._median_label.setText("Median: —")
         self._status_label.setText("Running...")
 
@@ -319,6 +320,7 @@ class BehavioralSessionPage(QWidget):
             self._median_label.setText(f"Median  {self._led_a}: {med_a:g}  {self._led_b}: {med_b:g}")
             row = self._table.rowCount()
             self._table.insertRow(row)
-            for col, val in enumerate((self._press_count, a_val, b_val)):
+            knob1, knob2 = frame.get("Knob1", "NONE"), frame.get("Knob2", "NONE")
+            for col, val in enumerate((self._press_count, a_val, b_val, knob1, knob2)):
                 self._table.setItem(row, col, QTableWidgetItem(str(val)))
             self._table.scrollToBottom()

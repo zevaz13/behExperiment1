@@ -40,12 +40,6 @@ Connect  ->  Participant  ->  Experiment Select  ->  Mode Config  ->  Session
 
 ### 1. Connect
 
-The app scans all USB serial ports and automatically selects the first port
-with a PJRC vendor ID (Teensy). It retries every 500 ms up to six times.
-
-- If the Teensy is not found automatically, a port dropdown and Connect button
-  appear. Select the correct COM port and click Connect.
-- The app sends a `get` command to confirm the firmware identity. Once the
   firmware replies, the app advances to the Participant page.
 
 ### 2. Participant
@@ -122,10 +116,6 @@ written to the CSV databases.
 Start (a new session number is not assigned; the existing file continues).
 
 **Save Results** — opens a file dialog to export the current press table to a
-text file. Auto-save already happens on every button press.
-
-**Back** — returns to Experiment Select (disabled while running). The same
-participant and folder are kept; you can run a different experiment type or
 color mode without re-entering participant information.
 
 ### 5. Session — Grid (EEG)

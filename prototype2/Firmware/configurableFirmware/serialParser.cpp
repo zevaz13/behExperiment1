@@ -37,6 +37,7 @@ static void printGet() {
     Serial.print("baselineLed3=");    Serial.println(ledIdStr(baselineLed3));
     Serial.print("baselineLed3Val="); Serial.println(baselineLed3Val);
     Serial.print("hue=");             Serial.println(hueEnabled ? 1 : 0);
+    Serial.print("knobShuffle=");     Serial.println(knobShuffleEnabled ? 1 : 0);
     Serial.print("REDLED=");          Serial.println((int)ledVal[LED_RED]);
     Serial.print("YELLOWLED=");       Serial.println((int)ledVal[LED_YELLOW]);
     Serial.print("GREENLED=");        Serial.println((int)ledVal[LED_GREEN]);
@@ -69,6 +70,7 @@ static void printGetParam(const String& param) {
     else if (param == "LEDA")       { Serial.print("LEDA=");            Serial.println(ledIdStr(ledA)); }
     else if (param == "LEDB")       { Serial.print("LEDB=");            Serial.println(ledIdStr(ledB)); }
     else if (param == "hue")        { Serial.print("hue=");             Serial.println(hueEnabled ? 1 : 0); }
+    else if (param == "knobShuffle") { Serial.print("knobShuffle=");    Serial.println(knobShuffleEnabled ? 1 : 0); }
     else if (param == "mode") {
         const char* modeStr = "NONE";
         switch (activeMode) {
@@ -118,6 +120,7 @@ static bool applyParam(const String& p, const String& v) {
     else if (p == "baselineLed3")    { if (!isValidLedName(v)) return false; LedId nv = parseLedId(v); if (ledInUse(nv, baselineLed1, baselineLed2)) return false; baselineLed3 = nv; }
     else if (p == "baselineLed3Val") { baselineLed3Val = constrain(v.toInt(), 0, 4095); }
     else if (p == "hue")          { if (activeMode == MODE_BEHAVIORAL) return false; hueEnabled = (v.toInt() != 0); }
+    else if (p == "knobShuffle")  { knobShuffleEnabled = (v.toInt() != 0); }
     // Solid-mode direct LED values — also applied live if running solid
     else if (p == "REDLED")    { int val = constrain(v.toInt(), 0, 4095); ledVal[LED_RED]    = val; if (activeMode == MODE_SOLID && fwState == STATE_RUNNING) analogWrite(PIN_RED,    val); }
     else if (p == "YELLOWLED") { int val = constrain(v.toInt(), 0, 4095); ledVal[LED_YELLOW] = val; if (activeMode == MODE_SOLID && fwState == STATE_RUNNING) analogWrite(PIN_YELLOW, val); }

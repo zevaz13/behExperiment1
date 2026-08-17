@@ -69,9 +69,12 @@ void runBehavioral() {
     int targetB = minB + (maxB - minB) / 5;
 
     while (started) {
+        int pinA = knobsSwapped ? PIN_KNOB_B : PIN_KNOB_A;
+        int pinB = knobsSwapped ? PIN_KNOB_A : PIN_KNOB_B;
+
         // Anchor: compute ADC offsets so the current physical knob position reads as targetA/targetB
-        int offsetA = (ledA != LED_NONE) ? rawFromMapped(targetA, minA, maxA) - analogRead(PIN_KNOB_A) : 0;
-        int offsetB = (ledB != LED_NONE) ? rawFromMapped(targetB, minB, maxB) - analogRead(PIN_KNOB_B) : 0;
+        int offsetA = (ledA != LED_NONE) ? rawFromMapped(targetA, minA, maxA) - analogRead(pinA) : 0;
+        int offsetB = (ledB != LED_NONE) ? rawFromMapped(targetB, minB, maxB) - analogRead(pinB) : 0;
 
         trCnt++;
         trigFlag = 1;
@@ -83,8 +86,8 @@ void runBehavioral() {
 
         // Trial loop: update LED values from anchored knob readings until button pressed
         while (started) {
-            if (ledA != LED_NONE) ledVal[ledA] = constrain(map(wrapAdc(analogRead(PIN_KNOB_A) + offsetA), 0, 4095, minA, maxA), minA, maxA);
-            if (ledB != LED_NONE) ledVal[ledB] = constrain(map(wrapAdc(analogRead(PIN_KNOB_B) + offsetB), 0, 4095, minB, maxB), minB, maxB);
+            if (ledA != LED_NONE) ledVal[ledA] = constrain(map(wrapAdc(analogRead(pinA) + offsetA), 0, 4095, minA, maxA), minA, maxA);
+            if (ledB != LED_NONE) ledVal[ledB] = constrain(map(wrapAdc(analogRead(pinB) + offsetB), 0, 4095, minB, maxB), minB, maxB);
 
             btn.update();
             bool pressed = btn.fallingEdge() || guiPressRequest;
@@ -111,6 +114,11 @@ void runBehavioral() {
                 int marginB = (maxB - minB) / 5;
                 targetA = constrain(pressA + walkJump(minA, maxA), minA + marginA, maxA - marginA);
                 targetB = constrain(pressB + walkJump(minB, maxB), minB + marginB, maxB - marginB);
+
+                if (knobShuffleEnabled) {
+                    long r = random(0, 10000);
+                    if (r >= 5000) knobsSwapped = !knobsSwapped;
+                }
                 break;
             }
 

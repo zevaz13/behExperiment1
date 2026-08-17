@@ -12,8 +12,10 @@ Commands (GUI -> Teensy):
     PRESS   (Solid or Behavioral only, while running)
 
 Frame format (every 100 ms while running):
-    FRAME@TrialNumber@Red@Yellow@Green@Blue@Cyan@HUE_R@HUE_G@HUE_B@HUE_CT@HUE_L@LEDA@LEDB@Press@Trigger
+    FRAME@TrialNumber@Red@Yellow@Green@Blue@Cyan@HUE_R@HUE_G@HUE_B@HUE_CT@HUE_L@LEDA@LEDB@Press@Trigger@Knob1@Knob2
     Unused numeric fields are -99. LEDA/LEDB are the assigned LED's name (or "NONE").
+    Knob1/Knob2 report which role ("LEDA"/"LEDB") each physical knob currently
+    drives in Behavioral mode, or "NONE"/"NONE" in every other mode.
 
 GET response (multi-line key=value pairs, complete once a 'mode=' line arrives):
     freq=10
@@ -29,11 +31,11 @@ _FRAME_PREFIX = "FRAME@"
 FRAME_FIELDS = (
     "TrialNumber", "Red", "Yellow", "Green", "Blue", "Cyan",
     "HUE_R", "HUE_G", "HUE_B", "HUE_CT", "HUE_L",
-    "LEDA", "LEDB", "Press", "Trigger",
+    "LEDA", "LEDB", "Press", "Trigger", "Knob1", "Knob2",
 )
 
-# Fields that carry an int; LEDA/LEDB are left as the LED-name string.
-_FRAME_INT_FIELDS = tuple(f for f in FRAME_FIELDS if f not in ("LEDA", "LEDB"))
+# Fields that carry an int; LEDA/LEDB/Knob1/Knob2 are left as LED-role strings.
+_FRAME_INT_FIELDS = tuple(f for f in FRAME_FIELDS if f not in ("LEDA", "LEDB", "Knob1", "Knob2"))
 
 
 def parse_frame(line: str) -> dict | None:

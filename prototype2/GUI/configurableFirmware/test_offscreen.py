@@ -64,8 +64,12 @@ def _frame(
     trial=1, red=0, yellow=0, green=0, blue=0, cyan=0,
     hue_r=-99, hue_g=-99, hue_b=-99, hue_ct=-99, hue_l=-99,
     leda="NONE", ledb="NONE", press=0, trigger=0,
+    knob1="NONE", knob2="NONE",
 ) -> str:
-    fields = (trial, red, yellow, green, blue, cyan, hue_r, hue_g, hue_b, hue_ct, hue_l, leda, ledb, press, trigger)
+    fields = (
+        trial, red, yellow, green, blue, cyan, hue_r, hue_g, hue_b, hue_ct, hue_l,
+        leda, ledb, press, trigger, knob1, knob2,
+    )
     return "FRAME@" + "@".join(str(f) for f in fields)
 
 
@@ -100,6 +104,7 @@ _BEHAVIORAL_DEFAULTS = {
     "bgStim1Led": "NONE", "bgStim1Int": "0", "bgStim2Led": "NONE", "bgStim2Int": "0",
     "ref1Led": "NONE", "ref1Int": "0", "ref2Led": "NONE", "ref2Int": "0",
     "ref3Led": "NONE", "ref3Int": "0",
+    "knobShuffle": "0",
 }
 
 _DEFAULTS_BY_MODE = {"LINEAR": _LINEAR_DEFAULTS, "GRID": _GRID_DEFAULTS, "BEHAVIORAL": _BEHAVIORAL_DEFAULTS}
@@ -133,7 +138,10 @@ def _connect(w: MainWindow) -> FakeSerialLink:
 # ---------------------------------------------------------------------------
 
 def test_parse_frame_valid():
-    line = _frame(trial=3, red=500, yellow=0, green=0, blue=0, cyan=0, leda="RED", ledb="NONE", press=1, trigger=1)
+    line = _frame(
+        trial=3, red=500, yellow=0, green=0, blue=0, cyan=0, leda="RED", ledb="NONE", press=1, trigger=1,
+        knob1="LEDA", knob2="LEDB",
+    )
     frame = parse_frame(line)
     assert frame is not None, "Valid frame failed to parse"
     assert frame["TrialNumber"] == 3
@@ -142,7 +150,9 @@ def test_parse_frame_valid():
     assert frame["LEDB"] == "NONE"
     assert frame["Press"] == 1
     assert frame["Trigger"] == 1
-    print("  [OK] parse_frame parses a well-formed FRAME@ line")
+    assert frame["Knob1"] == "LEDA"
+    assert frame["Knob2"] == "LEDB"
+    print("  [OK] parse_frame parses a well-formed 17-field FRAME@ line, incl. Knob1/Knob2")
 
 
 def test_parse_frame_rejects_non_frame():
@@ -750,6 +760,40 @@ def test_behavioral_config_save_load_round_trip():
     print("  [OK] Behavioral config save/load round-trips form values")
 
 
+def test_behavioral_knob_shuffle_checkbox_round_trips():
+    """M16: knobShuffle checkbox round-trips through ParamForm and Save/Load JSON."""
+    w, fake = _navigate_to_config("BEHAVIORAL")
+    assert w._behavioral_config_page._form.values()["knobShuffle"] == 0, "knobShuffle should default off"
+
+    w._behavioral_config_page._form._widgets["knobShuffle"].setChecked(True)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "beh_configparams_test.json"
+        save_config(path, w._behavioral_config_page._form.values())
+
+        w2, _fake2 = _navigate_to_config("BEHAVIORAL")
+        w2._behavioral_config_page._form.set_values({k: str(v) for k, v in load_config(path).items()})
+        assert w2._behavioral_config_page._form.values()["knobShuffle"] == 1, "knobShuffle did not round-trip"
+    print("  [OK] Behavioral knobShuffle checkbox round-trips through ParamForm/config save-load")
+
+
+def test_behavioral_table_has_knob_columns():
+    """M16: the press table gained Knob1/Knob2 columns, populated from the frame."""
+    w, fake = _navigate_to_config("BEHAVIORAL")
+    w._behavioral_config_page._form._widgets["LEDA"].setCurrentText("RED")
+    w._behavioral_config_page._form._widgets["LEDB"].setCurrentText("GREEN")
+    w._behavioral_config_page.start_requested.emit()
+    session = w._behavioral_session_page
+
+    assert session._table.columnCount() == 5
+    headers = [session._table.horizontalHeaderItem(c).text() for c in range(5)]
+    assert headers == ["Press #", "RED", "GREEN", "Knob1", "Knob2"], f"Unexpected headers: {headers}"
+
+    fake.inject(_frame(red=1500, green=1000, leda="RED", ledb="GREEN", press=1, knob1="LEDB", knob2="LEDA"))
+    row = [session._table.item(0, c).text() for c in range(5)]
+    assert row == ["1", "1500", "1000", "LEDB", "LEDA"], f"Unexpected row: {row}"
+    print("  [OK] Behavioral press table has Knob1/Knob2 columns and populates them from the frame")
+
+
 def test_behavioral_press_falls_back_to_last_live_value_when_zeroed():
     """M12.2: on real hardware the firmware's allLedsOff() sometimes races the
     press-event frame, so it arrives reporting (0, 0) instead of the pressed
@@ -1028,6 +1072,8 @@ TESTS = [
     test_behavioral_press_button_sends_press,
     test_behavioral_back_sends_stop,
     test_behavioral_config_save_load_round_trip,
+    test_behavioral_knob_shuffle_checkbox_round_trips,
+    test_behavioral_table_has_knob_columns,
     test_behavioral_press_falls_back_to_last_live_value_when_zeroed,
     test_behavioral_press_uses_fresh_values_when_not_zeroed,
     test_solid_hue_press_table_and_counter,
