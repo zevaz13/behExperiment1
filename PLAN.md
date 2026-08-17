@@ -75,6 +75,10 @@ Behavioral mode code paths only — no new subsystems. Full design in
       identically on unmodified baseline code (pre-existing, unrelated to
       Behavioral/knob code — Grid mode, untouched by M16). All Behavioral
       and M16-specific tests pass, including the 2 new ones.
-- [ ] Firmware: manual flash + `tests/test_m16_instructions.md` via Arduino
-      IDE serial monitor (user step, per CLAUDE.md)
-- [ ] After hardware verification, mark M16 done in this file
+- [x] Firmware: manual flash + `tests/test_m16_instructions.md` via Arduino
+      IDE serial monitor (user step, per CLAUDE.md) — passed
+- [x] GUI: live-hardware run on native Linux Mint (not WSL), Teensy over
+      `/dev/ttyACM*`; required installing the `libxcb-cursor0` system package
+      for the Qt6 xcb platform plugin — all tested and working
+
+**M16: done.**
