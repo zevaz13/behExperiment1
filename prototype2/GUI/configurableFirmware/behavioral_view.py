@@ -59,6 +59,7 @@ class BehavioralConfigPage(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self._configured = False
         self._baseline: dict[str, str] = {}
 
         self._form = ParamForm(BEHAVIORAL_PARAM_KEYS)
@@ -84,9 +85,15 @@ class BehavioralConfigPage(QWidget):
         layout.addWidget(self._diagram)
         layout.addLayout(btn_row)
 
+    def forget_session(self) -> None:
+        """Next setup() repopulates the form from the firmware defaults."""
+        self._configured = False
+
     def setup(self, settings: dict[str, str]) -> None:
         self._baseline = settings
-        self._form.set_values(settings)
+        if not self._configured:
+            self._form.set_values(settings)
+            self._configured = True
 
     def _on_load(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

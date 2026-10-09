@@ -409,6 +409,8 @@ class MainWindow(QMainWindow):
 
     def _teardown_link(self) -> None:
         self._cancel_countdown()
+        for page in self._config_pages.values():
+            page.forget_session()
         if self._active_page is not None:
             self._active_page.detach()
             self._active_page = None

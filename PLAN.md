@@ -82,3 +82,29 @@ Behavioral mode code paths only — no new subsystems. Full design in
       for the Qt6 xcb platform plugin — all tested and working
 
 **M16: done.**
+### M17: Per-session config memory (Linear / Grid / Behavioral)
+
+A session is one GUI run with one Teensy connection. Each mode opens with
+firmware defaults the first time; after that, its config form keeps the last
+values (edited or loaded from JSON) until the connection drops or the GUI
+closes.
+
+#### GUI (`prototype2/GUI/configurableFirmware/`)
+- [x] `linear_view.py`, `grid_view.py`, `behavioral_view.py`: config page
+      populates the form from GET only on the first `setup()` of a session
+      (`_configured` flag); `_baseline` is still refreshed every time, so
+      `changed_values()` re-sends the kept values via SET on Start
+- [x] Same three pages: `forget_session()` clears the flag
+- [x] `main_window.py`: `_teardown_link()` calls `forget_session()` on every
+      config page (disconnect or window close)
+- [ ] Not changed: experiment name and hue log path still reset on each
+      `setup()` (`SavingSection.reset()`)
+
+#### Verification
+- [x] Scratch script (offscreen): edit a Linear param, call `setup()` again,
+      value kept and reported by `changed_values()`; after `forget_session()`
+      the form returns to defaults
+- [ ] `test_offscreen.py`: full-suite run hits the known Qt teardown crash;
+      no automated test added for M17 yet
+- [ ] GUI: live-hardware check (run Linear, Back, reopen Linear: config
+      unchanged; unplug/replug: defaults) -- user step

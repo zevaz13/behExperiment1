@@ -1,0 +1,21 @@
+{
+  "freq": 10,
+  "interTrialWait": 250,
+  "LEDA": "RED",
+  "minA": 0,
+  "maxA": 3200,
+  "LEDB": "GREEN",
+  "minB": 0,
+  "maxB": 2000,
+  "bgStim1Led": "NONE",
+  "bgStim1Int": 0,
+  "bgStim2Led": "NONE",
+  "bgStim2Int": 0,
+  "ref1Led": "YELLOW",
+  "ref1Int": 2400,
+  "ref2Led": "NONE",
+  "ref2Int": 0,
+  "ref3Led": "NONE",
+  "ref3Int": 0,
+  "knobShuffle": 0
+}

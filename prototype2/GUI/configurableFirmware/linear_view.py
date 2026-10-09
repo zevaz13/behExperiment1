@@ -65,6 +65,7 @@ class LinearConfigPage(QWidget):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self._configured = False
         self._baseline: dict[str, str] = {}
 
         self._form = ParamForm(LINEAR_PARAM_KEYS)
@@ -97,10 +98,16 @@ class LinearConfigPage(QWidget):
         layout.addWidget(self._saving)
         layout.addLayout(btn_row)
 
+    def forget_session(self) -> None:
+        """Next setup() repopulates the form from the firmware defaults."""
+        self._configured = False
+
     def setup(self, settings: dict[str, str]) -> None:
         self._baseline = settings
         self._saving.reset()
-        self._form.set_values(settings)
+        if not self._configured:
+            self._form.set_values(settings)
+            self._configured = True
         self._saving.set_hue_enabled(bool(self._form.values().get("hue")))
 
     def _on_load(self) -> None:
